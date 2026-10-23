@@ -66,6 +66,7 @@ export function SettingsScreen() {
           />
           <Row label="Installed as app" value={installed ? 'yes' : 'no'} />
           <Row label="Camera API" value={hasNativeDetector() ? 'native' : 'wasm fallback'} />
+          <Row label="Build" value={__BUILD_ID__} mono />
           <Row label="This device id" value={deviceId.slice(0, 8)} mono />
         </dl>
       </div>

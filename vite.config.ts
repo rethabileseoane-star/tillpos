@@ -27,7 +27,20 @@ function lanHttps() {
   return { key: readFileSync(key), cert: readFileSync(cert) }
 }
 
+/**
+ * A short fingerprint of this build, shown in Settings.
+ *
+ * Netlify sets COMMIT_REF on every deploy, so the shopkeeper can look at the
+ * phone and tell instantly whether it is running the latest push. A local
+ * build falls back to the date.
+ */
+const buildId =
+  process.env.COMMIT_REF?.slice(0, 7) ?? new Date().toISOString().slice(0, 10)
+
 export default defineConfig({
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId),
+  },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
