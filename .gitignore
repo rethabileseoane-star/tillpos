@@ -1,0 +1,12 @@
+node_modules
+dist
+dev-dist
+certs
+tools/.smoke.mjs
+tools/.itest.cjs
+tools/.syncstub.cjs
+*.tsbuildinfo
+*.local
+.DS_Store
+.vscode/*
+!.vscode/extensions.json

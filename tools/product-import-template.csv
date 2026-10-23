@@ -1,0 +1,13 @@
+barcode,barcodes,name,details,price,cost,stockQty,lowStockThreshold,category
+6001234567892,,Sugar 1kg,,15.00,10.00,40,10,Grocery
+6001234567908,,Salt 1kg,,8.00,6.00,25,8,Grocery
+6001234567814,,Cooking Oil 1L,,65.00,50.00,12,5,Grocery
+6001234567821,,Maize Flour 10kg,,180.00,140.00,8,4,Grocery
+6001234567838,,Tomatoes 1kg,,12.00,9.00,30,10,Fresh
+6001234567845,,Onions 1kg,,15.00,11.00,30,10,Fresh
+6001234567852,,Water 1.5L,,3.50,2.50,60,20,Beverages
+6001234567869,,Soda 500ml,,5.00,3.50,80,24,Beverages
+6001234567876,,Bread loaf,,9.00,7.00,15,6,Bakery
+6001234567883,,Milk 1L,,15.00,12.00,20,8,Dairy
+6001234567890,,Eggs (tray of 30),,85.00,65.00,6,3,Dairy
+6001234567880,,Soap bar,,7.00,5.00,25,10,Household

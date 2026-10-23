@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* Lock out the browser's text-size inflation: a till must not reflow. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ink-900 text-slate-100 antialiased;
+    /* Respect notches on iPhone. */
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+  }
+
+  /* Big targets, no tap highlight delay. */
+  button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input,
+  select {
+    /* iOS zooms the page on focus unless the font is already 16px. */
+    font-size: 16px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-ink-600;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-tap font-medium
+           transition shadow-soft active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cash-500/60;
+  }
+  .btn-primary {
+    @apply btn bg-cash-500 text-ink-900 hover:bg-cash-400 hover:shadow-lift;
+  }
+  .btn-ghost {
+    @apply btn bg-ink-700 text-slate-100 hover:bg-ink-600;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-500 hover:shadow-lift;
+  }
+  .field {
+    @apply w-full rounded-xl border border-ink-600 bg-ink-800 px-4 py-3 text-tap
+           text-slate-100 outline-none placeholder:text-slate-500
+           focus:border-cash-500 focus:ring-2 focus:ring-cash-500/25;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-700 bg-ink-800 p-4 shadow-soft;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400;
+  }
+  /* Small rounded pill, the TailAdmin badge pattern. */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 align-middle text-[10px] font-medium;
+  }
+  /* Row of quick numeric keys for the cash tender screen. */
+  .keypad {
+    @apply grid grid-cols-3 gap-2;
+  }
+  .keypad > button {
+    @apply btn bg-ink-700 py-5 text-xl;
+  }
+}
+
+/* iOS shows a grey flash on tap unless this is set. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Respect vestibular settings: kill the motion we added, keep the states. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
