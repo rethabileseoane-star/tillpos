@@ -30,7 +30,15 @@ export function stripServerFields(row: RemoteRow): RemoteRow {
   const clean: Record<string, unknown> = { ...row }
   delete clean.serverSeq
   delete clean.serverUpdatedAt
+  // The cloud tags every row with its shop. Local tables are already one shop,
+  // so the tag is not stored and cannot leak into a backup or a local query.
+  delete clean.shopId
   return clean as RemoteRow
+}
+
+/** Add the active shop to an outbound row. */
+export function withShopId(row: RemoteRow, shopId: string): RemoteRow {
+  return { ...row, shopId }
 }
 
 /**

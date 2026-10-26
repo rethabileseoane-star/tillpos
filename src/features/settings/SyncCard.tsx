@@ -6,6 +6,7 @@ import { disableSync, loadSyncConfig, normalizeProjectUrl, saveSyncConfig } from
 import { forgetClient, signIn, signOut } from '@/sync/client'
 import { refreshSyncStatus, uploadEverything } from '@/sync/engine'
 import { runSync } from '@/sync/scheduler'
+import { loadedShop } from '@/db'
 import { useSyncState } from '@/sync/status'
 import { loadTillLabel, saveTillLabel } from './tillLabel'
 
@@ -20,6 +21,7 @@ import { loadTillLabel, saveTillLabel } from './tillLabel'
 export function SyncCard() {
   const sync = useSyncState()
   const pending = useLiveQuery(() => outboxCount(), []) ?? 0
+  const shop = loadedShop
 
   const [configured, setConfigured] = useState<boolean | null>(null)
   const [url, setUrl] = useState('')
@@ -108,7 +110,7 @@ export function SyncCard() {
   const sendEverything = async () => {
     if (
       !window.confirm(
-        'Send every record on this device to the cloud?\n\nDo this once, on the till that already holds the shop’s history, before the other devices are set up.',
+        `Send every record from ${shop.name} on this device to the cloud?\n\nDo this once, on the till that already holds this shop's history, before the other devices are set up.`,
       )
     ) {
       return
@@ -169,9 +171,12 @@ export function SyncCard() {
     <div className="card mt-3">
       <h2 className="text-sm font-semibold">Cloud sync</h2>
       <p className="mt-1 text-xs leading-relaxed text-slate-400">
-        One shop account shared by up to six devices. Each till keeps selling with
-        no network and merges with the others when it is online.
+        One sync account per shop, shared by up to six devices. Each till keeps
+        selling with no network and merges with the others when it is online.
       </p>
+      <dl className="mt-2 space-y-1.5 text-sm">
+        <Row label="Shop" value={`${shop.name} · ${shop.id}`} />
+      </dl>
 
       {configured === null ? (
         <p className="mt-3 text-xs text-slate-500">Checking…</p>
@@ -223,6 +228,12 @@ export function SyncCard() {
               autoCapitalize="characters"
             />
           </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+            This login must be assigned to shop code{' '}
+            <span className="font-mono text-slate-300">{shop.id}</span> in Supabase
+            (<span className="font-mono">app_metadata.shop_id</span>). A login for
+            another shop is refused.
+          </p>
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
             Give every till a different label — it goes in front of the receipt
             numbers (A-0001, B-0001) so two tills never print the same one.
@@ -329,7 +340,7 @@ export function SyncCard() {
             </button>
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-            Run “Send all records” once on the till that already has the shop’s
+            Run “Send all records” once on the till that already has this shop’s
             history, so the other devices can download it.
           </p>
         </>

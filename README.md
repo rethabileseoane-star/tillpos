@@ -1,8 +1,9 @@
 # Till POS
 
-Offline-first barcode point-of-sale for a single till. Scan with the phone
-camera, take cash, stock comes down, and the Z-report balances at the end of the
-day. Works with the network off.
+Offline-first barcode point-of-sale for a shop's till and, when needed, several
+tills and several shops on one phone. Scan with the phone camera, take cash,
+stock comes down, and the Z-report balances at the end of the day. Works with the
+network off.
 
 ## Running it
 
@@ -122,7 +123,7 @@ so a bad file does not silently import half a catalog.
 
 Settings → Staff & app lock adds a launch gate and separates the owner from the
 cashiers. Staff accounts are local to the phone; they are not Supabase users.
-The only cloud account is the shared shop login used for sync.
+The only cloud accounts are the per-shop sync logins.
 
 - The **owner** sees every section: Sell, Catalog, History, Money, Z-Report and
   Settings. The owner must use a password of at least 8 characters, not a
@@ -157,6 +158,34 @@ Roles are a screen boundary, not encryption. A cashier phone still holds the
 whole local database, so anyone with the device and developer tools can read or
 clear the site data. Treat a cashier phone as a shop device.
 
+## More than one shop
+
+One installed app can serve several shops on the same phone. Shop A keeps the
+existing `till-pos` IndexedDB database, so upgrading a phone never moves or
+erases its history. A new shop gets its own `till-pos-<shop-code>` database.
+
+- Add a shop in **Settings → Shops**, then open it. The new shop starts with the
+  current owner account (same password) and an empty catalog. No products, sales,
+  cash, settings or cashiers are copied.
+- Switch shops from **Settings → Shops** or the lock screen link **Shop: … ·
+  Change**. The app reloads so the database, staff roster, lock state, sync
+  login, cursors and settings all come from the selected shop.
+- Each shop has a permanent lowercase **shop code** (for example `shop-a` or
+  `shop-b`). It names the local database and must match the shop's Supabase
+  login claim `app_metadata.shop_id`.
+- Both shops can use one Supabase project. Every cloud row carries a `shopId`,
+  and RLS only exposes rows matching the signed-in login's shop claim. The app
+  checks the claim as well, so a login for one shop is refused in another.
+- Staff are per shop and per phone. Add the owner and that phone's cashiers
+  separately in each shop.
+- The owner password is copied when a shop is added, not stored in plain text.
+  Changing it later in one shop does not change the other shops' passwords.
+- A JSON backup covers the active shop. **Erase this device** deletes every
+  shop's local database on that phone; cloud copies are not touched.
+
+See [`docs/sync-setup.md`](docs/sync-setup.md) for the shop-code setup and the
+separate Supabase login for each shop.
+
 ## How the numbers work
 
 **Money is always an integer count of tambala (1/100 Maluti).** M100 is stored
@@ -180,16 +209,18 @@ movement ledger; nothing needs a server to record a transaction.
 Every mutation is also written to a local outbox, coalesced per record. Sync is
 off by default and the app is fully functional that way.
 
-Turn it on per device in **Settings → Cloud sync**: enter the Supabase project
-URL and anon key, sign in with the shop's email and password, and give the
-device a short label. See [`docs/sync-setup.md`](docs/sync-setup.md) for the
-click-by-click version, including the SQL to run once.
+Turn it on per device and per shop in **Settings → Cloud sync**: enter the
+Supabase project URL and anon key, sign in with that shop's email and password,
+and give the device a short label. Each shop has its own login and its own cloud
+rows in the same project. See [`docs/sync-setup.md`](docs/sync-setup.md) for the
+click-by-click version, including the SQL to run once and the shop-code claim.
 
 How it behaves with sync on:
 
-- **Push then pull.** Queued changes go up first, then everything newer than
-  this device's cursor comes down. An interrupted run resumes where it stopped,
-  because the cursor only advances on rows that arrived.
+- **Push then pull, scoped to the active shop.** Queued changes go up tagged with
+  the shop code, then rows newer than this device's cursor for that same shop
+  come down. An interrupted run resumes where it stopped, because the cursor only
+  advances on rows that arrived.
 - **It never auto-fails a sale.** A sale is committed locally and queued, so a
   dead connection only delays the upload.
 - **Conflicts resolve by newest edit**, on the timestamp the writing device
@@ -198,19 +229,25 @@ How it behaves with sync on:
   overwritten — that edit is this device's newest intent and wins on the next
   push. In practice almost nothing conflicts: sales, lines and the stock and
   cash ledgers are append-only.
-- **Stock stays a sum.** `product.stockQty` is a cache of the movement ledger,
-  recomputed after a pull, so two tills selling the same last item leave a
-  ledger that adds up (and a negative balance to reconcile).
+- **Stock stays a sum within a shop.** `product.stockQty` is a cache of that
+  shop's movement ledger, recomputed after a pull, so two tills selling the same
+  last item leave a ledger that adds up (and a negative balance to reconcile).
 - **Receipt numbers carry the till's label** (`A-0001`), because two devices
-  counting the same day would otherwise print the same number. A device with no
-  label keeps the old plain numbering.
-- **Shop-wide values sync; device secrets do not.** The shop name travels. The
-  owner and cashier roster, their password hashes, this device's session and its
-  cursor never leave the phone.
+  counting the same day would otherwise print the same number. Labels are per
+  shop: shop A and shop B can both have an `A` till. A device with no label keeps
+  the old plain numbering.
+- **Shop-wide values sync; device secrets do not.** The shop name travels within
+  that shop. The owner and cashier roster, their password hashes, this device's
+  sessions and its cursors never leave the phone.
+- **A shop's rows are isolated.** Rows carry a server-side `shopId`, and RLS uses
+  the auth token's `app_metadata.shop_id`. The local tables do not store the
+  tag; it is stripped as remote rows are applied. A pull from another shop is
+  ignored even if it reaches the device by mistake.
 
-Every row carries `id`, `createdAt`, `updatedAt`, `deletedAt`, `rev`,
-`deviceId`, plus a server-assigned `serverSeq` on the cloud copy, which is what
-makes a second device a configuration change rather than a rewrite.
+Every local row carries `id`, `createdAt`, `updatedAt`, `deletedAt`, `rev`,
+`deviceId`; the cloud copy adds `shopId` plus a server-assigned `serverSeq`,
+which is what makes a second device a configuration change rather than a
+rewrite.
 
 ## Layout
 
@@ -226,8 +263,9 @@ src/
     sales/      sale commit, void, stock adjustment
     history/    per-day sales with void
     reports/    Z-report and CSV export
-    settings/   device info, storage, cloud sync, receipt label
+    settings/   device info, storage, cloud sync, receipt label, shops
     security/   staff roster, app lock, WebAuthn, recovery backup
+  shops/        shop registry and per-shop database selection
   sync/         outbox, merge rules, Supabase client, sync engine/scheduler
   ui/           scan feedback
 docs/           multi-device sync setup guide
@@ -246,8 +284,8 @@ tools/          icon generator, logic smoke tests, CSV template
   browser's site data removes the roster and the ledger.
 - The lock runs on launch only; it does not re-lock after an idle period. Use
   **Lock now** at a counter handover.
-- Cashier accounts are per phone. Adding a cashier on the owner's phone does not
-  create the account on the phone that cashier carries.
+- Cashier accounts are per phone and per shop. Adding a cashier on the owner's phone
+  does not create the account on the phone that cashier carries.
 - Voids and refunds are owner-only by interface; a cashier with developer tools
   is outside the boundary described here.
 - A Z-report counts what has reached that device. Sync before closing, or the

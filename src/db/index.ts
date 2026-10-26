@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { getActiveShop, type ShopProfile } from '@/shops/registry'
 import type {
   AppSettings,
   CashMovement,
@@ -9,6 +10,17 @@ import type {
   StockMovement,
   SyncMeta,
 } from './types'
+
+/**
+ * The shop this page was opened for.
+ *
+ * The registry lives in localStorage and another tab could switch it while this
+ * tab is running. `db` cannot change without a reload, so every database and
+ * cloud operation in this tab must use the shop captured at module load, not
+ * the registry's current value. Otherwise a background sync in the old tab
+ * could tag its rows with the newly selected shop.
+ */
+export const loadedShop: ShopProfile = getActiveShop()
 
 /** Stable per-install identifier. Stored in localStorage so it survives reloads. */
 export function getDeviceId(): string {
@@ -21,7 +33,7 @@ export function getDeviceId(): string {
   return id
 }
 
-class TillDatabase extends Dexie {
+export class TillDatabase extends Dexie {
   products!: Table<Product, string>
   sales!: Table<Sale, string>
   saleLines!: Table<SaleLine, string>
@@ -30,8 +42,8 @@ class TillDatabase extends Dexie {
   settings!: Table<AppSettings, string>
   outbox!: Table<OutboxItem, number>
 
-  constructor() {
-    super('till-pos')
+  constructor(name: string = loadedShop.dbName) {
+    super(name)
 
     // Bump this integer for any future schema change.
     this.version(1).stores({
@@ -92,7 +104,7 @@ class TillDatabase extends Dexie {
   }
 }
 
-export const db = new TillDatabase()
+export const db = new TillDatabase(loadedShop.dbName)
 
 /** Populate sync metadata. `rev` increments so last-write-wins can be ordered. */
 export function withSyncMeta<T extends object>(

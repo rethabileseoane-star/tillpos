@@ -10,7 +10,7 @@
  */
 import './setup-env'
 import assert from 'node:assert/strict'
-import { db, repairStockCache } from '../src/db'
+import { db, repairStockCache, TillDatabase } from '../src/db'
 import type { Product } from '../src/db/types'
 import { importProducts, exportProductsCsv } from '../src/features/catalog/csvImport'
 import { commitSale, voidSale, adjustStock, businessDate } from '../src/features/sales/salesService'
@@ -50,13 +50,17 @@ import {
 import { verifySecret } from '../src/features/security/secret'
 import {
   OWNER_ACCOUNT_ID,
+  STAFF_KEY,
   addCashier,
   changeStaffSecret,
   createOwner,
   loadStaff,
+  parseStaffRoster,
   removeAllStaff,
   removeCashier,
 } from '../src/features/security/staff'
+import { addShop } from '../src/features/shops/shopManager'
+import { getActiveDbName, listShops } from '../src/shops/registry'
 import {
   disableSync,
   loadCursors,
@@ -153,6 +157,7 @@ function remoteProduct(overrides: Partial<Product> & { id: string }): RemoteRow 
     deletedAt: null,
     rev: 1,
     deviceId: 'device-a',
+    shopId: 'shop-a',
     ...overrides,
   } as unknown as RemoteRow
 }
@@ -1172,7 +1177,14 @@ async function main() {
 
   await check('a pulled settings row is refused unless its key is shared', async () => {
     await reset()
-    const meta = { createdAt: 1, updatedAt: 1, deletedAt: null, rev: 1, deviceId: 'd' }
+    const meta = {
+      createdAt: 1,
+      updatedAt: 1,
+      deletedAt: null,
+      rev: 1,
+      deviceId: 'd',
+      shopId: 'shop-a',
+    }
     assert.equal(
       await applyRemoteRow('settings', { id: 'security.credential', key: 'security.credential', value: '{"v":1}', ...meta }),
       false,
@@ -1184,6 +1196,16 @@ async function main() {
     )
     assert.equal(await loadShopName(), 'Maluti Traders')
     assert.equal(await db.outbox.count(), 0, 'a pulled setting was queued back')
+  })
+
+  await check('a pulled row from another shop is refused', async () => {
+    await reset()
+    const applied = await applyRemoteRow('products', {
+      ...remoteProduct({ id: 'foreign-product' }),
+      shopId: 'shop-b',
+    })
+    assert.equal(applied, false, 'a shop B row was written into shop A')
+    assert.equal(await db.products.get('foreign-product'), undefined)
   })
 
   console.log('receipt labels')
@@ -1413,6 +1435,15 @@ async function main() {
       anonKey: 'anon',
       email: 'shop@example.com',
     })
+    await db.outbox.add({
+      entity: 'settings',
+      entityId: 'security.staff',
+      op: 'upsert',
+      payload: JSON.stringify({ key: 'security.staff', value: 'secret-staff-hash' }),
+      createdAt: Date.now(),
+      attempts: 0,
+      lastError: null,
+    })
 
     const backup = await buildBackup()
     assert.equal(backup.tables.products.length, 3, 'products missing from the backup')
@@ -1420,10 +1451,66 @@ async function main() {
     assert.ok(keys.includes('report.shopName'), 'business settings were dropped')
     assert.ok(!keys.includes('sync.config'), 'the sync token was included')
     assert.ok(!keys.some((key) => key.startsWith('security.')), 'lock settings were included')
+    assert.ok(
+      backup.tables.outbox.every((item) => !item.payload.includes('security.staff')),
+      'a queued lock setting leaked into the outbox backup',
+    )
 
     const raw = JSON.stringify(backup)
     assert.ok(!raw.includes('482913'), 'the PIN leaked into the backup')
     assert.ok(!raw.includes('shop@example.com'), 'the shop login leaked into the backup')
+    assert.ok(!raw.includes('secret-staff-hash'), 'a queued secret leaked into the backup')
+  })
+
+  console.log('shops')
+
+  await check('a new shop is a separate database seeded with the owner only', async () => {
+    await reset()
+    assert.equal(getActiveDbName(), 'till-pos', 'shop A must keep the existing database')
+
+    await createOwner('Owner', 'owner-pass-123')
+    await addCashier('Cashier A', 'pin', '1234')
+    const ownerA = (await loadStaff()).find((a) => a.role === 'owner')!
+    await importProducts(csvFile(CSV))
+
+    const profile = await addShop({ name: 'Second Shop', code: 'shop-b-test' })
+    assert.equal(profile.id, 'shop-b-test')
+    assert.equal(profile.dbName, 'till-pos-shop-b-test')
+    assert.ok(
+      listShops().some((shop) => shop.id === 'shop-b-test'),
+      'the new shop was not added to the picker',
+    )
+
+    const second = new TillDatabase(profile.dbName)
+    try {
+      await second.open()
+      assert.equal(await second.products.count(), 0, 'shop A products were copied')
+      assert.equal(await second.sales.count(), 0, 'shop A sales were copied')
+
+      const staffRow = await second.settings.where('key').equals(STAFF_KEY).first()
+      assert.ok(staffRow, 'the new shop has no staff roster')
+      const staff = parseStaffRoster(staffRow.value)
+      assert.equal(staff.length, 1, 'a cashier or extra owner was copied')
+      assert.equal(staff[0]!.role, 'owner')
+      assert.notEqual(staff[0]!.id, ownerA.id, 'the owner id was reused across shops')
+      assert.equal(
+        staff[0]!.credential.hash,
+        ownerA.credential.hash,
+        'the owner password was not copied',
+      )
+      assert.equal(
+        await verifySecret(staff[0]!.credential, 'owner-pass-123'),
+        true,
+        'the owner password does not open the new shop',
+      )
+
+      const nameRow = await second.settings.where('key').equals('report.shopName').first()
+      assert.equal(nameRow?.id, 'report.shopName', 'the shop name row key is not stable')
+      assert.equal(nameRow?.value, 'Second Shop')
+      assert.equal(await second.outbox.count(), 1, 'the shop name was not queued for sync')
+    } finally {
+      second.close()
+    }
   })
 
   console.log(`\n${passed} passed, ${failed} failed`)

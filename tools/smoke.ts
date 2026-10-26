@@ -40,7 +40,12 @@ import type {
   StockReason,
 } from '../src/db/types'
 import { ACCOUNTS, balanceSheet, cashFlow, incomeStatement, trialBalances } from '../src/features/reports/accounts'
-import { remoteWins, stripServerFields, SYNC_ENTITIES } from '../src/sync/merge'
+import { remoteWins, stripServerFields, withShopId, SYNC_ENTITIES } from '../src/sync/merge'
+import {
+  cleanShopCode,
+  dbNameForShop,
+  validateShopCode,
+} from '../src/shops/registry'
 import {
   base64ToBytes,
   base64UrlToBytes,
@@ -577,10 +582,40 @@ check('a tie falls back to revision, then to the device id', () => {
 
 check('server-only columns never reach the local row', () => {
   const meta = { id: 'p', createdAt: 1, updatedAt: 1, deletedAt: null, rev: 1, deviceId: 'a' }
-  const clean = stripServerFields({ ...meta, serverSeq: 9, serverUpdatedAt: 'x' }) as unknown as Record<string, unknown>
+  const clean = stripServerFields({
+    ...meta,
+    shopId: 'shop-a',
+    serverSeq: 9,
+    serverUpdatedAt: 'x',
+  }) as unknown as Record<string, unknown>
   assert.equal('serverSeq' in clean, false)
   assert.equal('serverUpdatedAt' in clean, false)
+  assert.equal('shopId' in clean, false)
   assert.equal(clean.id, 'p')
+})
+
+check('outbound rows are tagged with the active shop', () => {
+  const row = withShopId(
+    { id: 'p', createdAt: 1, updatedAt: 1, deletedAt: null, rev: 1, deviceId: 'a' },
+    'shop-b',
+  ) as unknown as Record<string, unknown>
+  assert.equal(row.shopId, 'shop-b')
+  assert.equal(row.id, 'p')
+})
+
+check('shop A keeps the old database name and new shops get their own', () => {
+  assert.equal(dbNameForShop('shop-a'), 'till-pos')
+  assert.equal(dbNameForShop('shop-b'), 'till-pos-shop-b')
+  assert.equal(dbNameForShop('main-street'), 'till-pos-main-street')
+})
+
+check('shop codes are lowercase, stable and validated', () => {
+  assert.equal(cleanShopCode(' Shop B! '), 'shopb')
+  assert.equal(cleanShopCode('MAIN-STREET'), 'main-street')
+  assert.equal(validateShopCode('shop-b'), null)
+  assert.notEqual(validateShopCode('a'), null)
+  assert.notEqual(validateShopCode('-shop'), null)
+  assert.notEqual(validateShopCode('shop-'), null)
 })
 
 check('the push order puts parents before children', () => {

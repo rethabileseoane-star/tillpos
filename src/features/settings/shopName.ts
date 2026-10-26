@@ -1,5 +1,6 @@
-import { getSetting } from '@/db'
+import { getSetting, loadedShop } from '@/db'
 import { saveSharedSetting } from '@/sync/shared'
+import { updateShopName } from '@/shops/registry'
 
 /**
  * The shop's name, printed on report headers. Optional — reports fall back to
@@ -17,5 +18,8 @@ export async function loadShopName(): Promise<string> {
 }
 
 export async function saveShopName(name: string): Promise<void> {
-  await saveSharedSetting(KEY, name.trim())
+  const clean = name.trim()
+  await saveSharedSetting(KEY, clean)
+  // Keep the shop picker in step with the name printed on reports.
+  updateShopName(loadedShop.id, clean)
 }

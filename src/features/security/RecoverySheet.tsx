@@ -87,9 +87,9 @@ export function RecoverySheet({
 
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] leading-relaxed text-amber-200">
           <strong className="font-semibold">Save a copy first.</strong> Both files
-          download to this device's Downloads folder. The JSON archive contains
-          every sale, product and movement; the catalog CSV can be re-imported
-          with the existing importer.
+          download to this device's Downloads folder. They cover the shop you are
+          unlocking. The JSON archive contains every sale, product and movement;
+          the catalog CSV can be re-imported with the existing importer.
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
@@ -130,9 +130,9 @@ export function RecoverySheet({
         <div className="mt-5 border-t border-ink-700 pt-4">
           <h3 className="text-sm font-semibold text-red-300">Erase this device</h3>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            Deletes every product, sale, stock and cash movement on this device,
-            plus the lock. This cannot be undone. The cloud copy, if sync is on
-            for this device, is not touched. Type{' '}
+            Deletes every product, sale, stock and cash movement for <strong className="text-slate-200">every
+            shop on this phone</strong>, plus every lock and the sync settings. This
+            cannot be undone. Cloud copies are not touched. Type{' '}
             <strong className="font-mono text-slate-200">ERASE</strong> to confirm.
           </p>
           <input

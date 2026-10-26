@@ -52,6 +52,7 @@ async function check(name: string, fn: () => Promise<void> | void) {
 
 interface StoredRow extends Record<string, unknown> {
   id: string
+  shopId: string
   serverSeq: number
 }
 
@@ -72,13 +73,23 @@ function tableOf(name: string): Map<string, StoredRow> {
 }
 
 /** Simulate another device writing a row straight into the cloud. */
-function deviceWrite(name: string, row: Record<string, unknown>): void {
+function deviceWrite(
+  name: string,
+  row: Record<string, unknown>,
+  shopId = 'shop-a',
+): void {
   sequence += 1
-  tableOf(name).set(String(row.id), {
+  const stored = {
     ...row,
+    shopId,
     serverSeq: sequence,
     serverUpdatedAt: new Date().toISOString(),
-  } as StoredRow)
+  } as StoredRow
+  tableOf(name).set(`${shopId}:${String(row.id)}`, stored)
+}
+
+function rowKey(shopId: string, id: string): string {
+  return `${shopId}:${id}`
 }
 
 function readBody(req: http.IncomingMessage): Promise<unknown> {
@@ -117,7 +128,7 @@ const SESSION = {
     aud: 'authenticated',
     role: 'authenticated',
     email: 'shop@example.com',
-    app_metadata: { provider: 'email' },
+    app_metadata: { provider: 'email', shop_id: 'shop-a' },
     user_metadata: {},
     created_at: new Date().toISOString(),
   },
@@ -127,7 +138,18 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://stub')
 
   if (url.pathname.startsWith('/auth/v1/token')) {
-    return reply(res, 200, SESSION)
+    const body = (await readBody(req)) as { email?: string } | null
+    const session =
+      body?.email === 'other-shop@example.com'
+        ? {
+            ...SESSION,
+            user: {
+              ...SESSION.user,
+              app_metadata: { ...SESSION.user.app_metadata, shop_id: 'shop-b' },
+            },
+          }
+        : SESSION
+    return reply(res, 200, session)
   }
   if (url.pathname === '/auth/v1/user') {
     return reply(res, 200, SESSION.user)
@@ -145,8 +167,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET') {
     const raw = url.searchParams.get('serverSeq') ?? ''
     const cursor = raw.startsWith('gt.') ? Number(raw.slice(3)) : 0
+    const shopParam = url.searchParams.get('shopId') ?? ''
+    const shopId = shopParam.startsWith('eq.') ? shopParam.slice(3) : null
     const limit = Number(url.searchParams.get('limit') ?? '1000')
     const rows = [...tableOf(name).values()]
+      .filter((row) => (shopId ? row.shopId === shopId : true))
       .filter((row) => row.serverSeq > cursor)
       .sort((a, b) => a.serverSeq - b.serverSeq)
       .slice(0, limit)
@@ -159,12 +184,15 @@ const server = http.createServer(async (req, res) => {
     for (const row of rows) {
       if (!row || typeof row !== 'object') continue
       const id = String(row.id)
-      const existing = tableOf(name).get(id)
+      const shopId = String(row.shopId ?? 'shop-a')
+      const key = rowKey(shopId, id)
+      const existing = tableOf(name).get(key)
       sequence += 1
-      // Upsert semantics: merge by primary key, then re-stamp the cursor.
-      tableOf(name).set(id, {
+      // Upsert semantics: merge by (shopId, id), then re-stamp the cursor.
+      tableOf(name).set(key, {
         ...(existing ?? {}),
         ...row,
+        shopId,
         serverSeq: sequence,
         serverUpdatedAt: new Date().toISOString(),
       } as StoredRow)
@@ -280,7 +308,65 @@ async function main() {
     assert.equal(data.session?.user.email, 'shop@example.com')
   })
 
+  await check('a login for another shop is refused', async () => {
+    const result = await signIn('other-shop@example.com', 'correct horse')
+    assert.equal(result.ok, false, 'a shop B login was accepted in shop A')
+    assert.match(result.error ?? '', /belongs to shop/i)
+    // The refused session must not remain cached.
+    const again = await signIn('shop@example.com', 'correct horse')
+    assert.equal(again.ok, true, again.error)
+  })
+
   console.log('push')
+  await check('a row parked by the old single-shop build gets one retry', async () => {
+    const stalled = withSyncMeta(undefined, {
+      key: 'report.shopName',
+      value: 'Retry Shop',
+    })
+    await db.settings.put(stalled)
+    await db.outbox.add({
+      entity: 'settings',
+      entityId: stalled.id,
+      op: 'upsert',
+      payload: JSON.stringify(stalled),
+      createdAt: Date.now(),
+      attempts: 5,
+      lastError: 'null value in column "shopId"',
+    })
+
+    const outcome = await syncNow()
+    assert.equal(outcome.ok, true, outcome.error)
+    assert.equal(outcome.pushed, 1, 'the parked row was not retried')
+    assert.equal(await db.outbox.count(), 0)
+    assert.ok(tableOf('settings').has(`shop-a:${stalled.id}`), 'the parked row did not reach the cloud')
+
+    // Clean up so the push test starts from the same state as before.
+    await db.settings.delete(stalled.id)
+    tableOf('settings').delete(`shop-a:${stalled.id}`)
+
+    // The retry is one-time. A row parked after the upgrade must stay parked,
+    // or a genuinely bad payload would be retried forever.
+    const parkedAgain = withSyncMeta(undefined, {
+      key: 'report.shopName',
+      value: 'Another Shop',
+    })
+    await db.settings.put(parkedAgain)
+    await db.outbox.add({
+      entity: 'settings',
+      entityId: parkedAgain.id,
+      op: 'upsert',
+      payload: JSON.stringify(parkedAgain),
+      createdAt: Date.now(),
+      attempts: 5,
+      lastError: 'still failing',
+    })
+    const second = await syncNow()
+    assert.equal(second.pushed, 0)
+    assert.equal(await db.outbox.count(), 1, 'the retry reset ran more than once')
+    await db.outbox.clear()
+    await db.settings.delete(parkedAgain.id)
+  })
+
   await check('a sync sends this device’s queued rows and empties the queue', async () => {
     await seedThisDevice()
     const outcome = await syncNow()
@@ -291,6 +377,11 @@ async function main() {
     assert.equal(tableOf('sales').size, 1)
     assert.equal(tableOf('sale_lines').size, 1)
     assert.equal(tableOf('stock_movements').size, 1)
+    for (const map of tables.values()) {
+      for (const row of map.values()) {
+        assert.equal(row.shopId, 'shop-a', `a pushed row was not tagged: ${row.id}`)
+      }
+    }
   })
 
   await check('a sale lands before its lines, so the foreign key holds', () => {
@@ -305,6 +396,7 @@ async function main() {
     assert.ok(pulls.length > 0, 'no pull was issued')
     for (const query of pulls) {
       assert.match(query, /select=\*/, `pull did not select every column: ${query}`)
+      assert.match(query, /shopId=eq\.shop-a/, `pull was not scoped to this shop: ${query}`)
       assert.match(query, /serverSeq=gt\.\d+/, `pull did not filter by cursor: ${query}`)
       assert.match(query, /order=serverSeq\.asc/, `pull did not order by cursor: ${query}`)
     }
@@ -347,6 +439,7 @@ async function main() {
     assert.ok(pulled, 'the other device’s product did not arrive')
     assert.equal(pulled!.name, 'Remote salt')
     assert.equal(pulled!.stockQty, 5, 'cached stock was not rebuilt from the merged ledger')
+    assert.equal('shopId' in pulled!, false, 'the server-only shop tag leaked into local data')
   })
 
   await check('another device’s newer edit wins', async () => {
@@ -397,6 +490,43 @@ async function main() {
     assert.equal(again.pushed, 0, 'a pulled row was pushed back to the cloud')
     assert.equal(tableOf('products').size + tableOf('stock_movements').size, before)
     assert.equal(await db.outbox.count(), 0)
+  })
+
+  await check('a row from another shop never reaches this shop’s local database', async () => {
+    const foreign = withSyncMeta(undefined, {
+      barcode: '6007777777777',
+      barcodes: ['6007777777777'],
+      name: 'Shop B only',
+      price: 100,
+      cost: 50,
+      stockQty: 1,
+      lowStockThreshold: 0,
+      category: 'Grocery',
+      active: true,
+    }) as Product
+    deviceWrite('products', foreign, 'shop-b')
+    deviceWrite(
+      'stock_movements',
+      {
+        id: 'shop-b-move-1',
+        productId: foreign.id,
+        delta: 1,
+        reason: 'opening',
+        refId: null,
+        note: 'Shop B stock',
+        createdAt: 1,
+        updatedAt: 1,
+        deletedAt: null,
+        rev: 1,
+        deviceId: 'device-b',
+      },
+      'shop-b',
+    )
+
+    const outcome = await syncNow()
+    assert.equal(outcome.ok, true, outcome.error)
+    assert.equal(outcome.pulled, 0, 'a shop B row was counted as a shop A pull')
+    assert.equal(await db.products.get(foreign.id), undefined, 'a shop B product arrived')
   })
 
   await check('a re-sync of the same rows is idempotent', async () => {

@@ -10,6 +10,7 @@ import {
 } from '@/features/install/install'
 import { useInstall } from '@/features/install/useInstall'
 import { SecurityCard } from '@/features/security/SecurityCard'
+import { ShopCard } from '@/features/shops/ShopCard'
 import { loadShopName, saveShopName } from './shopName'
 import { SyncCard } from './SyncCard'
 
@@ -142,6 +143,8 @@ export function SettingsScreen() {
           <p className="mt-1 text-[11px] text-cash-400">Saved — appears on your next books PDF.</p>
         )}
       </div>
+
+      <ShopCard />
 
       <div className="card mt-3">
         <h2 className="text-sm font-semibold">Data on this device</h2>

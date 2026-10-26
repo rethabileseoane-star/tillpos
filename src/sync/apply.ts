@@ -1,4 +1,4 @@
-import { db } from '@/db'
+import { db, loadedShop } from '@/db'
 import type { SyncEntity, SyncMeta } from '@/db/types'
 import { remoteWins, stripServerFields, type RemoteRow } from './merge'
 import { isSharedSettingKey } from './shared'
@@ -43,6 +43,10 @@ export async function isPendingLocally(entity: SyncEntity, entityId: string): Pr
  * and rows that lose the last-write-wins comparison against a local edit.
  */
 export async function applyRemoteRow(entity: SyncEntity, remote: RemoteRow): Promise<boolean> {
+  // Defence in depth: the pull query already filters by shop, but a row from a
+  // different shop must never be written even if a server or stub gets it wrong.
+  if (remote.shopId !== loadedShop.id) return false
+
   const row = stripServerFields(remote)
 
   if (entity === 'settings' && !isSharedSettingKey(String(row.key ?? ''))) return false

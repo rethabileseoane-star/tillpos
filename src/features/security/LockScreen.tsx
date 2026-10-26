@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { loadedShop } from '@/db'
 import { loadShopName } from '@/features/settings/shopName'
+import { ShopSwitchSheet } from '@/features/shops/ShopSwitchSheet'
+import { listShops, type ShopProfile } from '@/shops/registry'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
 import { unlockWithBiometric } from './biometric'
 import type { BiometricRecord } from './credentialService'
@@ -42,6 +45,9 @@ export function LockScreen({
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     accounts.length === 1 ? accounts[0]!.id : null,
   )
+  const [shops] = useState<ShopProfile[]>(() => listShops())
+  const [activeShop] = useState<ShopProfile>(() => loadedShop)
+  const [shopSheetOpen, setShopSheetOpen] = useState(false)
 
   useEffect(() => {
     // Cosmetic only: a missing shop name must not disturb the lock screen.
@@ -64,54 +70,79 @@ export function LockScreen({
 
   if (!selected) {
     return (
-      <AccountPicker shop={shop} accounts={accounts} onPick={(a) => setSelectedId(a.id)} />
+      <>
+        <AccountPicker
+          shop={shop || activeShop.name}
+          accounts={accounts}
+          onPick={(a) => setSelectedId(a.id)}
+          footer={
+            shops.length > 1 ? (
+              <ShopFooter
+                shop={shop || activeShop.name}
+                onChange={() => setShopSheetOpen(true)}
+              />
+            ) : undefined
+          }
+        />
+        {shopSheetOpen && <ShopSwitchSheet onClose={() => setShopSheetOpen(false)} />}
+      </>
     )
   }
 
   const isPin = selected.credential.kind === 'pin'
 
   return (
-    <div className="flex min-h-dvh flex-col bg-ink-900 px-5 py-8">
-      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
-        <header className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cash-500/15 text-cash-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-7 w-7">
-              <rect x="5" y="11" width="14" height="9" rx="2" />
-              <path d="M8 11V8a4 4 0 118 0v3" />
-            </svg>
-          </div>
-          {shop && (
-            <p className="mt-4 text-[10px] uppercase tracking-[0.25em] text-slate-500">{shop}</p>
+    <>
+      <div className="flex min-h-dvh flex-col bg-ink-900 px-5 py-8">
+        <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
+          <header className="flex flex-col items-center text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cash-500/15 text-cash-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-7 w-7">
+                <rect x="5" y="11" width="14" height="9" rx="2" />
+                <path d="M8 11V8a4 4 0 118 0v3" />
+              </svg>
+            </div>
+            <p className="mt-4 text-[10px] uppercase tracking-[0.25em] text-slate-500">
+              {shop || activeShop.name}
+            </p>
+            <h1 className="mt-2 text-xl font-bold">{selected.name}</h1>
+            <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">
+              {selected.role === 'owner' ? 'Owner' : 'Cashier'}
+            </p>
+            <p className="mt-2 text-sm text-slate-400">
+              Enter your {isPin ? 'PIN' : 'password'} to open the till.
+            </p>
+          </header>
+
+          <LockEntry
+            key={selected.id}
+            account={selected}
+            biometric={selected.role === 'owner' ? biometric : null}
+            onUnlock={() => onUnlock(selected)}
+          />
+
+          {accounts.length > 1 && (
+            <div className="mt-6 text-center">
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                className="btn-ghost w-full !py-2.5 text-sm"
+              >
+                Switch account
+              </button>
+            </div>
           )}
-          <h1 className="mt-2 text-xl font-bold">{selected.name}</h1>
-          <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">
-            {selected.role === 'owner' ? 'Owner' : 'Cashier'}
-          </p>
-          <p className="mt-2 text-sm text-slate-400">
-            Enter your {isPin ? 'PIN' : 'password'} to open the till.
-          </p>
-        </header>
 
-        <LockEntry
-          key={selected.id}
-          account={selected}
-          biometric={selected.role === 'owner' ? biometric : null}
-          onUnlock={() => onUnlock(selected)}
-        />
-
-        {accounts.length > 1 && (
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => setSelectedId(null)}
-              className="btn-ghost w-full !py-2.5 text-sm"
-            >
-              Switch account
-            </button>
-          </div>
-        )}
+          {shops.length > 1 && (
+            <ShopFooter
+              shop={shop || activeShop.name}
+              onChange={() => setShopSheetOpen(true)}
+            />
+          )}
+        </div>
       </div>
-    </div>
+      {shopSheetOpen && <ShopSwitchSheet onClose={() => setShopSheetOpen(false)} />}
+    </>
   )
 }
 
@@ -119,10 +150,12 @@ function AccountPicker({
   shop,
   accounts,
   onPick,
+  footer,
 }: {
   shop: string
   accounts: StaffAccount[]
   onPick: (account: StaffAccount) => void
+  footer?: ReactNode
 }) {
   return (
     <div className="flex min-h-dvh flex-col bg-ink-900 px-5 py-8">
@@ -174,6 +207,8 @@ function AccountPicker({
             </button>
           ))}
         </div>
+
+        {footer}
       </div>
     </div>
   )
@@ -459,6 +494,20 @@ function CashierRecoverySheet({ name, onClose }: { name: string; onClose: () => 
           Back to sign in
         </button>
       </div>
+    </div>
+  )
+}
+
+function ShopFooter({ shop, onChange }: { shop: string; onChange: () => void }) {
+  return (
+    <div className="mt-4 text-center">
+      <button
+        type="button"
+        onClick={onChange}
+        className="text-xs text-slate-500 underline underline-offset-2"
+      >
+        Shop: {shop} · Change
+      </button>
     </div>
   )
 }

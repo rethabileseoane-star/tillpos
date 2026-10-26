@@ -1,8 +1,8 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { db, repairStockCache } from '@/db'
+import type { Session, SupabaseClient } from '@supabase/supabase-js'
+import { db, getSetting, loadedShop, repairStockCache, setSetting } from '@/db'
 import type { SyncEntity } from '@/db/types'
 import { applyRemoteRow } from './apply'
-import { getClient, signedInEmail } from './client'
+import { getClient, sessionShopId, shopClaimError, signedInEmail } from './client'
 import {
   loadCursors,
   loadLastSyncAt,
@@ -11,7 +11,7 @@ import {
   setLastSyncAt,
   type SyncCursor,
 } from './config'
-import { SYNC_ENTITIES, type RemoteRow } from './merge'
+import { SYNC_ENTITIES, withShopId, type RemoteRow } from './merge'
 import { isSharedSettingKey } from './shared'
 import { setSyncState } from './status'
 
@@ -27,6 +27,7 @@ import { setSyncState } from './status'
 const PULL_BATCH = 500
 const PUSH_BATCH = 200
 const MAX_ATTEMPTS = 5
+const RETRY_RESET_FLAG = 'sync.retryResetAfterShopUpgrade'
 
 export type SyncSkip = 'disabled' | 'signed-out' | 'offline'
 
@@ -39,6 +40,65 @@ export interface SyncOutcome {
 }
 
 /**
+ * Every synced table now has a composite `(shopId, id)` primary key. Stating
+ * the conflict target explicitly means an upsert does not depend on PostgREST's
+ * cached idea of the primary key after a schema change.
+ */
+const UPSERT_OPTIONS = { onConflict: 'shopId,id' } as const
+
+/**
+ * The signed-in session, refreshed once if it predates the shop claim.
+ *
+ * A phone that was signed in before multi-shop has a valid token without
+ * `app_metadata.shop_id`. Supabase only copies changed app metadata into a new
+ * token, so refreshing once is what upgrades that session without asking the
+ * owner to type the password again.
+ */
+async function sessionForShop(
+  client: SupabaseClient,
+): Promise<{ session: Session | null; error?: string; signedOut?: boolean }> {
+  const { data, error } = await client.auth.getSession()
+  if (error || !data.session) return { session: null, signedOut: true }
+
+  const expected = loadedShop.id
+  let session = data.session
+  let actual = sessionShopId(session)
+
+  if (!actual) {
+    const refreshed = await client.auth.refreshSession()
+    if (refreshed.data.session) {
+      session = refreshed.data.session
+      actual = sessionShopId(session)
+    }
+  }
+
+  if (actual !== expected) return { session, error: shopClaimError(expected, actual) }
+  return { session }
+}
+
+/**
+ * Give rows stranded by the single-shop schema change one more chance.
+ *
+ * An old build that was still open when the cloud gained the required `shopId`
+ * column could fail the same queued row five times and park it. Those edits are
+ * still safe in the local outbox, but the normal push loop deliberately skips
+ * parked rows. On the first successful sync after upgrading, reset the attempt
+ * counter once so nothing made before the upgrade is left behind.
+ */
+async function resetStalledOutboxOnce(): Promise<void> {
+  // Only set the once-only marker after actually rescuing parked rows. An old
+  // build in another tab could still be running during the upgrade and park a
+  // row after this tab's first successful sync; leaving the marker unset lets
+  // that row be rescued too. Once a rescue happens, the marker stops any
+  // genuinely bad payload from being retried forever.
+  if ((await getSetting(RETRY_RESET_FLAG)) === '1') return
+  const stalled = await db.outbox.filter((item) => item.attempts >= MAX_ATTEMPTS).toArray()
+  if (stalled.length === 0) return
+  await db.outbox.bulkPut(stalled.map((item) => ({ ...item, attempts: 0, lastError: null })))
+  await setSetting(RETRY_RESET_FLAG, '1')
+}
+
+/**
  * Send every queued local change.
  *
  * Items are sent oldest first so a sale always lands before its lines and
@@ -48,6 +108,7 @@ export interface SyncOutcome {
  */
 async function pushOutbox(
   client: SupabaseClient,
+  shopId: string,
 ): Promise<{ pushed: number; stalled: number; error?: string }> {
   const items = await db.outbox.orderBy('createdAt').toArray()
   let pushed = 0
@@ -75,7 +136,9 @@ async function pushOutbox(
       continue
     }
 
-    const { error } = await client.from(item.entity).upsert(row)
+    const { error } = await client
+      .from(item.entity)
+      .upsert(withShopId(row, shopId), UPSERT_OPTIONS)
     if (error) {
       await db.outbox.update(item.id, {
         attempts: item.attempts + 1,
@@ -101,6 +164,7 @@ async function pushOutbox(
 async function pullChanges(
   client: SupabaseClient,
   cursors: SyncCursor,
+  shopId: string,
 ): Promise<{ pulled: number; changedStock: boolean }> {
   let pulled = 0
   let changedStock = false
@@ -112,6 +176,7 @@ async function pullChanges(
       const { data, error } = await client
         .from(entity)
         .select('*')
+        .eq('shopId', shopId)
         .gt('serverSeq', cursor)
         .order('serverSeq', { ascending: true })
         .limit(PULL_BATCH)
@@ -157,26 +222,39 @@ export async function syncNow(): Promise<SyncOutcome> {
   const client = await getClient()
   if (!client) return { ok: false, pushed: 0, pulled: 0, skipped: 'disabled' }
 
-  const { data, error } = await client.auth.getSession()
-  if (error || !data.session) {
+  const shopId = loadedShop.id
+  const auth = await sessionForShop(client)
+  if (!auth.session) {
     setSyncState({ enabled: true, email: null, pending: await db.outbox.count() })
     return { ok: false, pushed: 0, pulled: 0, skipped: 'signed-out' }
+  }
+  if (auth.error) {
+    setSyncState({
+      enabled: true,
+      email: auth.session.user.email ?? null,
+      running: false,
+      phase: 'idle',
+      error: auth.error,
+      pending: await db.outbox.count(),
+    })
+    return { ok: false, pushed: 0, pulled: 0, error: auth.error }
   }
 
   setSyncState({
     enabled: true,
-    email: data.session.user.email ?? null,
+    email: auth.session.user.email ?? null,
     running: true,
     phase: 'pushing',
     error: null,
   })
 
   try {
-    const push = await pushOutbox(client)
+    await resetStalledOutboxOnce()
+    const push = await pushOutbox(client, shopId)
 
     setSyncState({ phase: 'pulling', pushed: push.pushed })
     const cursors = await loadCursors()
-    const pull = await pullChanges(client, cursors)
+    const pull = await pullChanges(client, cursors, shopId)
 
     // Stock balances are cached from the movement ledger, and the ledger just
     // grew, so recompute them from the merged movements.
@@ -253,8 +331,10 @@ export async function uploadEverything(): Promise<{
   const client = await getClient()
   if (!client) return { ok: false, pushed: 0, error: 'Sync is not configured.' }
 
-  const { data } = await client.auth.getSession()
-  if (!data.session) return { ok: false, pushed: 0, error: 'Sign in first.' }
+  const shopId = loadedShop.id
+  const auth = await sessionForShop(client)
+  if (!auth.session) return { ok: false, pushed: 0, error: 'Sign in first.' }
+  if (auth.error) return { ok: false, pushed: 0, error: auth.error }
 
   setSyncState({ running: true, phase: 'pushing', error: null })
   let pushed = 0
@@ -262,8 +342,12 @@ export async function uploadEverything(): Promise<{
     for (const entity of SYNC_ENTITIES) {
       const rows = await rowsFor(entity)
       for (let i = 0; i < rows.length; i += PUSH_BATCH) {
-        const slice = rows.slice(i, i + PUSH_BATCH)
-        const { error } = await client.from(entity).upsert(slice)
+        const slice = rows
+          .slice(i, i + PUSH_BATCH)
+          .map((row) => withShopId(row, shopId))
+        const { error } = await client
+          .from(entity)
+          .upsert(slice, UPSERT_OPTIONS)
         if (error) throw new Error(`${error.message} (${entity})`)
         pushed += slice.length
       }

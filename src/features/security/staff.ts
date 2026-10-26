@@ -140,13 +140,34 @@ export function parseStaffRoster(raw: string | null): StaffAccount[] {
   }
 }
 
+/** Encode a roster exactly as it is stored under `security.staff`. */
+export function serializeStaffRoster(accounts: StaffAccount[]): string {
+  return accounts.length > 0
+    ? JSON.stringify({ v: 1, accounts } satisfies StaffRoster)
+    : ''
+}
+
 async function writeRoster(accounts: StaffAccount[]): Promise<void> {
-  await setSetting(
-    STAFF_KEY,
-    accounts.length > 0
-      ? JSON.stringify({ v: 1, accounts } satisfies StaffRoster)
-      : '',
-  )
+  await setSetting(STAFF_KEY, serializeStaffRoster(accounts))
+}
+
+/**
+ * A copy of the owner for a newly added shop.
+ *
+ * A fresh id keeps lockout attempt keys from crossing shops. The credential
+ * hash is copied, so the owner opens the new shop with the same password
+ * without the secret ever being available in plain text.
+ */
+export function cloneOwnerForShop(owner: StaffAccount): StaffAccount {
+  const now = Date.now()
+  return {
+    ...owner,
+    id: crypto.randomUUID(),
+    role: 'owner',
+    createdAt: now,
+    updatedAt: now,
+    credential: { ...owner.credential },
+  }
 }
 
 /** Write the roster and keep the legacy owner credential in step. */

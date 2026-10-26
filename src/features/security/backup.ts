@@ -1,4 +1,7 @@
 import { db } from '@/db'
+import Dexie from 'dexie'
+import { listShops } from '@/shops/registry'
+import { isSharedSettingKey } from '@/sync/shared'
 import type {
   AppSettings,
   CashMovement,
@@ -51,6 +54,20 @@ function isPrivateSetting(key: string): boolean {
   )
 }
 
+/**
+ * The outbox can contain a pending settings edit. Keep only the shared shop
+ * settings in a backup, never a queued copy of a device secret or cursor.
+ */
+function isExportableOutboxItem(item: OutboxItem): boolean {
+  if (item.entity !== 'settings') return true
+  try {
+    const row = JSON.parse(item.payload) as { key?: unknown }
+    return typeof row.key === 'string' && isSharedSettingKey(row.key)
+  } catch {
+    return false
+  }
+}
+
 export async function buildBackup(): Promise<TillBackup> {
   const [products, sales, saleLines, stockMovements, cashMovements, settings, outbox] =
     await Promise.all([
@@ -74,7 +91,7 @@ export async function buildBackup(): Promise<TillBackup> {
       stockMovements,
       cashMovements,
       settings: settings.filter((s) => !isPrivateSetting(s.key)),
-      outbox,
+      outbox: outbox.filter(isExportableOutboxItem),
     },
   }
 }
@@ -88,16 +105,38 @@ export async function downloadBackupJson(): Promise<void> {
 }
 
 /**
- * Delete the local database and this app's localStorage keys.
+ * Delete every shop's local database and this app's localStorage keys.
+ *
+ * This is the "forgot the lock" reset, so it is deliberately whole-device: a
+ * phone may hold shop A and shop B, and leaving one database behind would leave
+ * a lock whose password was also lost. The cloud copies are not touched.
  *
  * Closing happens inside Dexie's delete(), so the caller only has to reload
- * afterwards. Only `till.*` keys are touched (which includes the cached
- * Supabase session under `till.supabase.auth`); anything else on the origin is
- * left alone. The `sb-` sweep is belt and braces for a session key written by a
- * different Supabase client version.
+ * afterwards. Only `till.*` keys are touched (which includes the shop registry
+ * and cached Supabase sessions); anything else on the origin is left alone.
  */
 export async function eraseLocalData(): Promise<void> {
-  await db.delete()
+  const names = new Set(listShops().map((shop) => shop.dbName))
+
+  // A registry can be damaged or missing after a browser cleanup. Sweep any
+  // other database this app has created so a reset really is a reset.
+  const factory = indexedDB as IDBFactory & {
+    databases?: () => Promise<Array<{ name?: string }>>
+  }
+  try {
+    const found = await factory.databases?.()
+    for (const info of found ?? []) {
+      if (info.name?.startsWith('till-pos')) names.add(info.name)
+    }
+  } catch {
+    // `databases()` is not available in every browser; the registry names are
+    // still enough for the normal case.
+  }
+
+  for (const name of names) {
+    if (name === db.name) await db.delete()
+    else await Dexie.delete(name)
+  }
 
   const keys: string[] = []
   for (let i = 0; i < localStorage.length; i++) {

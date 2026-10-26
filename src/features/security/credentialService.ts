@@ -23,6 +23,7 @@ import {
  */
 
 const CREDENTIAL_KEY = 'security.credential'
+export { CREDENTIAL_KEY }
 const BIOMETRIC_KEY = 'security.biometric'
 
 export interface BiometricRecord {
