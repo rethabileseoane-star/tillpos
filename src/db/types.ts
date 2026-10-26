@@ -46,10 +46,12 @@ export interface Product extends SyncMeta {
 }
 
 /**
- * This till takes cash only. The union is kept as a type (rather than a bare
- * string literal) so a future non-cash method is a one-word change here.
+ * How the customer settled the sale at the till.
+ *
+ * `credit` means the goods left and the customer owes the shop. Money received
+ * later is a separate `credit_payment` cash movement, never a second sale.
  */
-export type PaymentMethod = 'cash'
+export type PaymentMethod = 'cash' | 'credit'
 
 export interface Sale extends SyncMeta {
   /** Human-facing receipt number, sequential per local calendar day. */
@@ -70,6 +72,17 @@ export interface Sale extends SyncMeta {
    * staff accounts existed have no name; every new sale gets one.
    */
   cashierName?: string
+  /** Customer who owes the money on a `credit` sale. Empty for cash sales. */
+  customerName?: string
+  /**
+   * Bad-debt write-off. A credit sale keeps its revenue and status; the unpaid
+   * balance is removed by a bad-debt expense and recorded here for the journal.
+   */
+  writtenOffAt?: number | null
+  writeOffDate?: string | null
+  writtenOffAmount?: Cents
+  writeOffReason?: string
+  writtenOffBy?: string
 }
 
 export interface SaleLine extends SyncMeta {
@@ -104,6 +117,8 @@ export type CashReason =
   | 'drawing'
   | 'expense'
   | 'loan_repay'
+  /** Money received against a credit sale (a deposit or a later part-payment). */
+  | 'credit_payment'
 
 /**
  * What a "money in" movement represents. Own money is capital (owner equity);
@@ -132,6 +147,8 @@ export interface CashMovement extends SyncMeta {
   kind?: CashInKind
   businessDate: string
   note: string
+  /** Staff member who handled this movement, for credit payments and audits. */
+  staffName?: string
 }
 
 /**

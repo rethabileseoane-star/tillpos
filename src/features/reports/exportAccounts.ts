@@ -6,6 +6,14 @@ import {
   balanceSheet,
   incomeStatement,
 } from './accounts'
+import {
+  CREDIT_STATE_LABEL,
+  creditPaidMap,
+  creditRows,
+  creditTotals,
+  effectiveWriteOffAmount,
+  writeOffDate,
+} from '@/features/credit/credit'
 
 /**
  * The rest of the export set: the raw ledgers an accountant can audit and a
@@ -47,7 +55,7 @@ export async function exportCashLedgerCsv(dates?: string[]): Promise<Blob> {
     '',
     `# Movements shown: ${rows.length} of ${all.length} (all time)`,
     `# Cash in drawer now (MWK): ${(all.reduce((s, m) => s + m.delta, 0) / 100).toFixed(2)}`,
-    '# Types: Sale, Void, Opening float, Money in, Bought stock, Owner took, Paid out, Loan repaid',
+    '# Types: Sale, Credit payment, Void, Opening float, Money in, Bought stock, Owner took, Paid out, Loan repaid',
   ].join('\n')
 
   return new Blob([csv + footer], { type: 'text/csv;charset=utf-8' })
@@ -116,6 +124,125 @@ export async function exportStockLedgerCsv(start?: number, end?: number): Promis
 }
 
 /**
+ * The credit book as CSV: one row per credit sale billed in the window, then
+ * the collections and write-offs for the same days. The per-sale balance is the
+ * position today, so it matches the debt book on the History screen.
+ */
+export async function exportCreditJournalCsv(dates: string[]): Promise<Blob> {
+  const [sales, cash] = await Promise.all([
+    db.sales.toArray(),
+    db.cashMovements.orderBy('createdAt').toArray(),
+  ])
+  const saleById = new Map(sales.map((s) => [s.id, s]))
+  const paid = creditPaidMap(cash)
+  const inWindow = (d: string) => dates.length === 0 || dates.includes(d)
+
+  const rows = creditRows(sales, cash)
+    .filter((row) => row.sale.status === 'completed' && inWindow(row.sale.businessDate))
+    .sort(
+      (a, b) =>
+        a.sale.businessDate.localeCompare(b.sale.businessDate) ||
+        a.sale.createdAt - b.sale.createdAt,
+    )
+    .map((row) => {
+      const written = effectiveWriteOffAmount(row.sale, row.paid)
+      const day = writeOffDate(row.sale)
+      return {
+        date: row.sale.businessDate,
+        receipt_no: row.sale.receiptNo,
+        customer: row.sale.customerName ?? '',
+        total_mwk: (row.sale.total / 100).toFixed(2),
+        paid_mwk: (row.paid / 100).toFixed(2),
+        balance_mwk: (row.balance / 100).toFixed(2),
+        status: CREDIT_STATE_LABEL[row.state],
+        cashier: row.sale.cashierName ?? '',
+        write_off_date: written > 0 ? day ?? '' : '',
+        write_off_reason: written > 0 ? row.sale.writeOffReason ?? '' : '',
+        written_off_by: written > 0 ? row.sale.writtenOffBy ?? '' : '',
+      }
+    })
+
+  const header = [
+    'date',
+    'receipt_no',
+    'customer',
+    'total_mwk',
+    'paid_mwk',
+    'balance_mwk',
+    'status',
+    'cashier',
+    'write_off_date',
+    'write_off_reason',
+    'written_off_by',
+  ]
+  const csv = Papa.unparse(rows, { columns: header })
+
+  const totals = creditTotals(sales, cash, dates)
+  const receipts = cash
+    .filter((m) => m.reason === 'credit_payment' && inWindow(m.businessDate))
+    .map((m) => {
+      const sale = m.refId ? saleById.get(m.refId) : undefined
+      return {
+        date: m.businessDate,
+        customer: sale?.customerName ?? 'Customer',
+        receipt_no: sale?.receiptNo ?? '',
+        amount_mwk: (m.delta / 100).toFixed(2),
+        received_by: m.staffName ?? sale?.cashierName ?? '',
+        note: m.note,
+      }
+    })
+  const receiptCsv = receipts.length
+    ? Papa.unparse(receipts, {
+        columns: ['date', 'customer', 'receipt_no', 'amount_mwk', 'received_by', 'note'],
+      })
+    : '(none)'
+
+  const writeOffs = sales.flatMap((s) => {
+    const amount = effectiveWriteOffAmount(s, paid.get(s.id) ?? 0)
+    const day = writeOffDate(s)
+    if (!(amount > 0) || day === null || !inWindow(day)) return []
+    return [
+      {
+        date: day,
+        customer: s.customerName ?? '',
+        receipt_no: s.receiptNo,
+        amount_mwk: (amount / 100).toFixed(2),
+        reason: s.writeOffReason ?? '',
+        written_off_by: s.writtenOffBy ?? '',
+      },
+    ]
+  })
+  const writeOffCsv = writeOffs.length
+    ? Papa.unparse(writeOffs, {
+        columns: ['date', 'customer', 'receipt_no', 'amount_mwk', 'reason', 'written_off_by'],
+      })
+    : '(none)'
+
+  const footer = [
+    '',
+    `# Credit sales billed in period (MWK): ${(totals.creditSales / 100).toFixed(2)}`,
+    `# Collected in period (MWK): ${(totals.collected / 100).toFixed(2)}`,
+    `# Written off in period (MWK): ${(totals.writtenOff / 100).toFixed(2)}`,
+    `# Credit still owed now (MWK): ${(totals.outstanding / 100).toFixed(2)}`,
+    `# Open credit sales now: ${totals.debtorCount}`,
+    '',
+    '# CREDIT RECEIPTS IN PERIOD',
+    receiptCsv
+      .split('\n')
+      .map((l) => `# ${l}`)
+      .join('\n'),
+    '',
+    '# BAD DEBTS WRITTEN OFF IN PERIOD',
+    writeOffCsv
+      .split('\n')
+      .map((l) => `# ${l}`)
+      .join('\n'),
+  ].join('\n')
+
+  return new Blob([csv + footer], { type: 'text/csv;charset=utf-8' })
+}
+
+/**
  * One small file with two statements side by side, nothing fancier:
  *  - Income statement for the selected window (sales, cost of goods, expenses,
  *    net profit).
@@ -141,6 +268,7 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     { item: 'Cost of goods sold (at recorded cost)', amount_mwk: (stmt.cogs / 100).toFixed(2) },
     { item: 'Gross profit', amount_mwk: (stmt.grossProfit / 100).toFixed(2) },
     { item: 'Expenses paid (rent, transport...)', amount_mwk: (stmt.expenses / 100).toFixed(2) },
+    { item: 'Bad debts written off', amount_mwk: (stmt.badDebts / 100).toFixed(2) },
     { item: 'NET PROFIT', amount_mwk: (stmt.netProfit / 100).toFixed(2) },
   ]
   const csv = Papa.unparse(rows, { columns: ['item', 'amount_mwk'] })
@@ -155,6 +283,7 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     '# BALANCE SHEET (today)',
     '# ASSETS',
     `# Cash in drawer (MWK), ${(bs.cash / 100).toFixed(2)}`,
+    `# Customers who owe (credit) (MWK), ${(bs.receivables / 100).toFixed(2)}`,
     `# Stock in shop at cost (MWK), ${(bs.stockValue / 100).toFixed(2)}`,
     `# Total assets (MWK), ${(bs.totalAssets / 100).toFixed(2)}`,
     '',

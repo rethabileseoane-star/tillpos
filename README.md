@@ -1,9 +1,9 @@
 # Till POS
 
 Offline-first barcode point-of-sale for a shop's till and, when needed, several
-tills and several shops on one phone. Scan with the phone camera, take cash,
-stock comes down, and the Z-report balances at the end of the day. Works with the
-network off.
+tills and several shops on one phone. Scan with the phone camera, take cash or
+customer credit, stock comes down, and the Z-report balances at the end of the
+day. Works with the network off.
 
 ## Running it
 
@@ -15,7 +15,7 @@ npm run dev        # http://localhost:5173
 Other scripts:
 
 ```bash
-npm test           # money / barcode / cart logic checks
+npm test           # unit, database integration and sync checks
 npm run build      # typecheck + production build into dist/
 npm run preview    # serve the built app on your LAN, for phone testing
 npm run icons      # regenerate the PWA icon PNGs
@@ -129,10 +129,13 @@ The only cloud accounts are the per-shop sync logins.
   Settings. The owner must use a password of at least 8 characters, not a
   4-digit PIN. If an existing lock uses a PIN, the Staff card asks the owner to
   replace it before a cashier can be added.
-- A **cashier** sees Sell and Catalog only. They can sell, including ad-hoc items
-  with just a name and price, and browse the catalog read-only. Cost, profit,
-  drawer cash, stock adjustment, import/export, History, Money, Z-Report and
-  Settings are hidden. Voids and refunds stay with the owner.
+- A **cashier** sees Sell, Catalog and History. They can sell, including ad-hoc
+  items with just a name and price, and browse the catalog read-only. Their
+  History is today only and hides every price, total, cost, profit, cash figure
+  and export. They can still work the **credit book**: take a payment against
+  any outstanding debt, or write one off, because that is counter work rather
+  than a revenue report. Money, Z-Report, Settings, stock adjustment,
+  import/export and voids stay with the owner.
 - Each person gets their own name on the lock screen and their own 4–8 digit PIN
   or password. Every completed sale is stamped with that name, shown in History
   and carried in the sales CSV and books sales journal.
@@ -195,6 +198,19 @@ till means the drawer never reconciles.
 
 **Nothing is ever deleted.** Voids append a reversing stock movement and flag
 the sale. The ledger stays auditable, and the ledger is the source of truth.
+
+**Credit is revenue when the goods leave.** A credit sale bills its full total
+and creates an amount owed by the customer. Money handed over later is a
+`credit_payment` cash movement against that same sale: it puts cash in the
+drawer and reduces the debt, and it is never counted as a second sale. A
+write-off removes the remaining debt as a bad-debt expense without moving cash.
+If a payment reaches this till from another device after the write-off, it
+reduces the bad-debt loss rather than leaving a negative receivable.
+Voiding a credit sale reverses its revenue and restores its stock, but refunds
+only the cash the customer actually paid; the unpaid balance simply disappears.
+A written-off sale cannot be voided. The trial balance, P&L, cash flow and
+balance sheet read the same rows, so the sales journal, credit book and drawer
+stay tied together.
 
 **Stock is a sum, not a number.** Every change is a row in `stock_movements`
 (`sale`, `void`, `import`, `adjust`, `opening`). `products.stockQty` is only a
@@ -260,10 +276,11 @@ src/
     scanner/    camera + native/wasm decoding, 1.5s duplicate debounce
     catalog/    CSV/Excel import, product editor
     cart/       cart merge rules
-    sell/       camera view, cart panel, checkout, ad-hoc capture
+    sell/       camera view, cart panel, cash and credit checkout, ad-hoc capture
     sales/      sale commit, void, stock adjustment
-    history/    per-day sales with void
-    reports/    Z-report and CSV export
+    credit/     credit balances, payments and write-offs
+    history/    per-day sales, credit book, payments and write-offs
+    reports/    Z-report, credit journal and CSV/PDF export
     settings/   device info, storage, cloud sync, receipt label, shops
     security/   staff roster, app lock, WebAuthn, recovery backup
   shops/        shop registry and per-shop database selection
@@ -276,8 +293,11 @@ tools/          icon generator, logic smoke tests, CSV template
 
 ## Known gaps in v1
 
-- No opening float or cash-in/out, so the Z-report's net cash assumes everything
-  was taken in cash and nothing was paid in or out.
+- Credit sales capture a customer name only. There is no credit limit, customer
+  statement or age analysis; the credit book lists every open balance oldest
+  first.
+- A write-off has no undo. It is kept on the sale and in the bad-debts journal,
+  and a written-off debt cannot take a payment or be voided.
 - Day boundaries use the device clock and local calendar.
 - No tax or discounts.
 - Staff roles guard the screen, not the database: records are not encrypted at
@@ -287,8 +307,9 @@ tools/          icon generator, logic smoke tests, CSV template
   **Lock now** at a counter handover.
 - Cashier accounts are per phone and per shop. Adding a cashier on the owner's phone
   does not create the account on the phone that cashier carries.
-- Voids and refunds are owner-only by interface; a cashier with developer tools
-  is outside the boundary described here.
+- Voids and refunds are owner-only by interface. A cashier can take a credit
+  payment or write off a debt, but cannot void a sale. A cashier with developer
+  tools is outside the boundary described here.
 - A Z-report counts what has reached that device. Sync before closing, or the
   report is missing the other tills' sales.
 - Conflict resolution compares the writing device's clock. A phone with badly

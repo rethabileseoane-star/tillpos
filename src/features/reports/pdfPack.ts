@@ -4,10 +4,11 @@ import { loadShopName } from '@/features/settings/shopName'
 import { businessDate } from '@/features/sales/salesService'
 
 /**
- * The books pack as a single PDF: sales journal, receipts and payments
- * journals, trial balance, P&L, cash flow, balance sheet, and inventory, each
- * starting on its own page with the shop's name and the period in the header.
- * Drives straight to the phone's file app or share sheet — no printer needed.
+ * The books pack as a single PDF: sales, credit-sales, receipts, credit-receipts,
+ * payments and bad-debt journals, trial balance, P&L, cash flow, balance sheet,
+ * and inventory, each starting on its own page with the shop's name and the
+ * period in the header. Drives straight to the phone's file app or share sheet —
+ * no printer needed.
  */
 
 const PAGE_W = 595.28 // A4 portrait, points
@@ -29,7 +30,7 @@ export async function exportBooksPdf(dates: string[]): Promise<Blob> {
   doc.text('Books and statements', MARGIN, 82)
   doc.setFontSize(10)
   doc.text(`Period: ${periodLabel(dates)}  ·  Prepared ${today}`, MARGIN, 98)
-  doc.text('Recorded on the till — cash only, no card, no credit.', MARGIN, 114)
+  doc.text('Recorded on the till — cash and customer credit.', MARGIN, 114)
   doc.setDrawColor(180)
   doc.line(MARGIN, 126, PAGE_W - MARGIN, 126)
 
@@ -89,7 +90,7 @@ function renderTable(doc: jsPDF, table: BookTable): void {
       y = 56
       drawHeader()
     }
-    const isTotal = row[0] === 'TOTAL' || String(row[0]).toUpperCase() === String(row[0])
+    const isTotal = row[0] === 'TOTAL'
     if (row.length === 1) {
       // Section headings in statement tables: "ASSETS", "LIABILITIES"...
       doc.setFont('helvetica', 'bold')

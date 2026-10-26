@@ -17,15 +17,28 @@ import {
   trialBalances,
   windowMillis,
 } from './accounts'
+import {
+  CREDIT_STATE_LABEL,
+  creditPaidMap,
+  creditRows,
+  creditTotals,
+  effectiveWriteOffAmount,
+  outstandingCredit,
+  writeOffDate,
+} from '@/features/credit/credit'
 
 /**
  * The books pack: every record an accountant asks for, built as plain tables
  * so the PDF renderer and any future format share one source of truth.
  *
- *  - Sales journal            every sale line, posted to cash and sales
- *  - Cash receipts journal    money into the drawer (sales, floats, money in)
+ *  - Sales journal            every completed sale line, cash and credit
+ *  - Credit sales journal     who owes what, paid to date and balance
+ *  - Cash receipts journal    money into the drawer (sales, credit payments,
+ *                             floats, money in)
+ *  - Credit receipts journal  money collected against credit sales
  *  - Payments journal         money out of the drawer (stock, expenses,
  *                             drawings, loan repayments)
+ *  - Bad debts journal        unpaid credit balances written off
  *  - Trial balance            every account with debits and credits
  *  - Profit & loss            sales, returns, cost of goods, expenses, profit
  *  - Cash flow statement      operating vs financing, opening to closing
@@ -78,7 +91,7 @@ function runningBalances(cash: CashMovement[]): Map<string, Cents> {
 
 /** One row per sale line — the shape an accountant pivots. */
 export function salesJournal(data: BooksData, dates: string[]): BookTable {
-  const { sales, lines, cash } = data
+  const { sales, lines } = data
   const window = inWindow(dates)
   const rows: (string | number)[][] = []
   let total: Cents = 0
@@ -95,6 +108,8 @@ export function salesJournal(data: BooksData, dates: string[]): BookTable {
         l.qty,
         fmt2(l.unitPrice),
         fmt2(l.lineTotal),
+        sale.customerName ?? '',
+        sale.paymentMethod === 'credit' ? 'Credit' : 'Cash',
         sale.cashierName ?? '',
       ])
       total += l.lineTotal
@@ -107,27 +122,194 @@ export function salesJournal(data: BooksData, dates: string[]): BookTable {
       String(a[2]).localeCompare(String(z[2])) ||
       String(a[1]).localeCompare(String(z[1])),
   )
-  const voided = cash
-    .filter((m) => m.reason === 'void' && window(m.businessDate))
-    .reduce((s, m) => s + m.delta, 0)
+  const creditSales = sales
+    .filter(
+      (s) =>
+        s.status === 'completed' &&
+        s.paymentMethod === 'credit' &&
+        window(s.businessDate),
+    )
+    .reduce((s, sale) => s + sale.total, 0)
+  const voided = sales
+    .filter((s) => s.status === 'voided' && window(s.businessDate))
+    .reduce((s, sale) => s + sale.total, 0)
   return {
     title: 'Sales journal',
-    subtitle: `Cash received and the items that paid for it · ${periodLabel(dates)}`,
-    columns: ['Date', 'Receipt', 'Time', 'Item', 'Qty', 'Unit (M)', 'Amount (M)', 'Cashier'],
+    subtitle: `Every completed sale line, cash and credit · ${periodLabel(dates)}`,
+    columns: [
+      'Date',
+      'Receipt',
+      'Time',
+      'Item',
+      'Qty',
+      'Unit (M)',
+      'Amount (M)',
+      'Customer',
+      'Payment',
+      'Cashier',
+    ],
     rows,
     notes: [
       `Total of ${count} lines (M): ${fmt2(total)}`,
-      voided < 0 ? `Refunds handed back (M): ${fmt2(-voided)}` : 'No refunds in this period.',
+      `Credit sales billed in this period (M): ${fmt2(creditSales)}`,
+      voided > 0
+        ? `Voided sales reversed in this period (M): ${fmt2(voided)}`
+        : 'No voided sales in this period.',
     ],
   }
 }
 
-/** Money into the drawer: sales, floats, and money in (own or borrowed). */
+/**
+ * Every credit sale billed in the period, with what has been paid to date and
+ * what is still owed. A row marked "Written off" still carries its revenue; the
+ * bad debt appears as an expense in the P&L, not as a refund here.
+ */
+export function creditSalesJournal(data: BooksData, dates: string[]): BookTable {
+  const { sales, cash } = data
+  const window = inWindow(dates)
+  const rows = creditRows(sales, cash)
+    .filter((row) => row.sale.status === 'completed' && window(row.sale.businessDate))
+    .sort(
+      (a, b) =>
+        a.sale.businessDate.localeCompare(b.sale.businessDate) ||
+        a.sale.createdAt - b.sale.createdAt,
+    )
+  let total: Cents = 0
+  let paid: Cents = 0
+  let balance: Cents = 0
+  const tableRows: (string | number)[][] = rows.map((row) => {
+    total += row.sale.total
+    paid += row.paid
+    balance += row.balance
+    return [
+      row.sale.businessDate,
+      row.sale.receiptNo,
+      new Date(row.sale.createdAt).toISOString().slice(11, 19),
+      row.sale.customerName ?? '',
+      fmt2(row.sale.total),
+      fmt2(row.paid),
+      fmt2(row.balance),
+      CREDIT_STATE_LABEL[row.state],
+      row.sale.cashierName ?? '',
+    ]
+  })
+  const totals = creditTotals(sales, cash, dates)
+  return {
+    title: 'Credit sales journal',
+    subtitle: `Goods sold on credit, paid to date and still owed · ${periodLabel(dates)}`,
+    columns: [
+      'Date',
+      'Receipt',
+      'Time',
+      'Customer',
+      'Total (M)',
+      'Paid (M)',
+      'Balance (M)',
+      'Status',
+      'Cashier',
+    ],
+    rows: tableRows,
+    notes: [
+      `Credit sales billed in this period (M): ${fmt2(total)}`,
+      `Collected against those sales to date (M): ${fmt2(paid)}`,
+      `Still owed on those sales (M): ${fmt2(balance)}`,
+      `Written off in this period (M): ${fmt2(totals.writtenOff)}`,
+      `All credit still owed now (M): ${fmt2(outstandingCredit(sales, cash))}`,
+    ],
+  }
+}
+
+/** Money collected against credit sales in the period, including deposits. */
+export function creditReceiptsJournal(data: BooksData, dates: string[]): BookTable {
+  const { sales, cash } = data
+  const window = inWindow(dates)
+  const saleById = new Map(sales.map((s) => [s.id, s]))
+  const rows: (string | number)[][] = []
+  let total: Cents = 0
+  for (const m of cash) {
+    if (m.reason !== 'credit_payment' || !window(m.businessDate)) continue
+    const sale = m.refId ? saleById.get(m.refId) : undefined
+    rows.push([
+      m.businessDate,
+      new Date(m.createdAt).toISOString().slice(11, 19),
+      sale?.customerName ?? 'Customer',
+      sale?.receiptNo ?? '',
+      fmt2(m.delta),
+      m.staffName ?? sale?.cashierName ?? '',
+      m.note || 'Credit payment',
+    ])
+    total += m.delta
+  }
+  return {
+    title: 'Credit receipts journal',
+    subtitle: `Money collected against credit sales · ${periodLabel(dates)}`,
+    columns: ['Date', 'Time', 'Customer', 'Receipt', 'Amount (M)', 'Received by', 'Note'],
+    rows,
+    notes: [
+      `Total collected (M): ${fmt2(total)}`,
+      'A collection reduces the customer balance; it is never counted as a new sale.',
+    ],
+  }
+}
+
+/** Unpaid credit balances removed as bad debts in the period. */
+export function badDebtsJournal(data: BooksData, dates: string[]): BookTable {
+  const { sales, cash } = data
+  const paid = creditPaidMap(cash)
+  const window = inWindow(dates)
+  const rows: (string | number)[][] = []
+  let total: Cents = 0
+  for (const sale of sales) {
+    const amount = effectiveWriteOffAmount(sale, paid.get(sale.id) ?? 0)
+    if (!(amount > 0)) continue
+    const day = writeOffDate(sale)
+    if (!day || !window(day)) continue
+    rows.push([
+      day,
+      sale.writtenOffAt
+        ? new Date(sale.writtenOffAt).toISOString().slice(11, 19)
+        : '',
+      sale.receiptNo,
+      sale.customerName ?? '',
+      fmt2(amount),
+      sale.writeOffReason ?? '',
+      sale.writtenOffBy ?? '',
+    ])
+    total += amount
+  }
+  rows.sort(
+    (a, z) =>
+      String(a[0]).localeCompare(String(z[0])) ||
+      String(a[1]).localeCompare(String(z[1])) ||
+      String(a[2]).localeCompare(String(z[2])),
+  )
+  return {
+    title: 'Bad debts journal',
+    subtitle: `Unpaid credit balances written off · ${periodLabel(dates)}`,
+    columns: [
+      'Date',
+      'Time',
+      'Receipt',
+      'Customer',
+      'Amount (M)',
+      'Reason',
+      'Written off by',
+    ],
+    rows,
+    notes: [
+      `Total written off (M): ${fmt2(total)}`,
+      'A write-off is a bad-debt expense. No cash left the drawer.',
+      'Payments received later reduce the bad-debt loss.',
+    ],
+  }
+}
+
+/** Money into the drawer: sales, credit collections, floats, and money in. */
 export function receiptsJournal(data: BooksData, dates: string[]): BookTable {
   const { cash } = data
   const window = inWindow(dates)
   const running = runningBalances(cash)
-  const types = new Set(['sale', 'void', 'float', 'cash_in'])
+  const types = new Set(['sale', 'credit_payment', 'void', 'float', 'cash_in'])
   const rows: (string | number)[][] = []
   let inTotal: Cents = 0
   for (const m of cash) {
@@ -149,7 +331,7 @@ export function receiptsJournal(data: BooksData, dates: string[]): BookTable {
   }
   return {
     title: 'Cash receipts journal',
-    subtitle: `Money into the drawer · ${periodLabel(dates)}`,
+    subtitle: `Money into the drawer, including credit collections · ${periodLabel(dates)}`,
     columns: ['Date', 'Time', 'Source', 'Note', 'In (M)', 'Out (M)', 'Balance (M)'],
     rows,
     notes: [`Total received (M): ${fmt2(inTotal)}`],
@@ -242,6 +424,7 @@ export function profitAndLossTable(data: BooksData, dates: string[]): BookTable 
   }
   rows.push(
     ['Expenses paid', fmt2(-stmt.expenses)],
+    ['Bad debts written off', fmt2(-stmt.badDebts)],
     ['NET PROFIT', fmt2(stmt.netProfit)],
   )
   return {
@@ -260,7 +443,7 @@ export function cashFlowTable(data: BooksData, dates: string[]): BookTable {
   const cf = cashFlow(data.cash, dates)
   const rows: (string | number)[][] = [
     ['Cash in the drawer at the start', fmt2(cf.opening)],
-    ['Cash received from sales', fmt2(cf.operatingIn)],
+    ['Cash received from sales and credit collections', fmt2(cf.operatingIn)],
     ['Cash paid for stock and expenses (operating)', fmt2(-cf.operatingOut)],
     ['Cash put in by the owner and loans (financing)', fmt2(cf.financingIn)],
     ['Cash paid to the owner and loan repayments (financing)', fmt2(-cf.financingOut)],
@@ -281,6 +464,7 @@ export function balanceSheetTable(data: BooksData): BookTable {
   const rows: (string | number)[][] = [
     ['ASSETS'],
     ['  Cash in drawer', fmt2(bs.cash)],
+    ['  Customers who owe (credit)', fmt2(bs.receivables)],
     ['  Stock in the shop (at cost)', fmt2(bs.stockValue)],
     ['TOTAL ASSETS', fmt2(bs.totalAssets)],
     ['LIABILITIES'],
@@ -352,8 +536,11 @@ export function inventoryTable(data: BooksData, dates: string[]): BookTable {
 export function buildBookPack(data: BooksData, dates: string[]): BookTable[] {
   return [
     salesJournal(data, dates),
+    creditSalesJournal(data, dates),
     receiptsJournal(data, dates),
+    creditReceiptsJournal(data, dates),
     paymentsJournal(data, dates),
+    badDebtsJournal(data, dates),
     trialBalanceTable(data),
     profitAndLossTable(data, dates),
     cashFlowTable(data, dates),

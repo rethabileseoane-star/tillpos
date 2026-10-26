@@ -25,6 +25,7 @@ const MOVEMENT_LABEL: Record<CashReason, string> = {
   drawing: 'Owner took',
   expense: 'Paid out',
   loan_repay: 'Loan repaid',
+  credit_payment: 'Credit payment',
 }
 
 const MOVEMENT_CHIP: Record<CashReason, string> = {
@@ -36,6 +37,7 @@ const MOVEMENT_CHIP: Record<CashReason, string> = {
   drawing: 'bg-amber-500/15 text-amber-300',
   expense: 'bg-rose-500/15 text-rose-300',
   loan_repay: 'bg-violet-500/15 text-violet-300',
+  credit_payment: 'bg-cash-500/15 text-cash-400',
 }
 
 type SheetKind = 'buy' | 'float' | 'cash_in' | 'drawing' | 'expense' | 'loan_repay'
@@ -65,7 +67,14 @@ export function MoneyScreen() {
   )
 
   const todaySales = useMemo(
-    () => cash.filter((m) => m.reason === 'sale' && m.businessDate === today).reduce((s, m) => s + m.delta, 0),
+    () =>
+      cash
+        .filter(
+          (m) =>
+            (m.reason === 'sale' || m.reason === 'credit_payment') &&
+            m.businessDate === today,
+        )
+        .reduce((s, m) => s + m.delta, 0),
     [cash, today],
   )
   const todayStock = useMemo(
@@ -124,7 +133,7 @@ export function MoneyScreen() {
           </div>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-          Today · {formatMaluti(todaySales)} from sales
+          Today · {formatMaluti(todaySales)} cash from sales and credit
           {todayStock < 0 && <> · {formatMaluti(-todayStock)} on stock</>}
           {' '}· stock in shop ≈ {formatMaluti(stockWorth)}
           {loansOwed > 0 && <> · loans owed {formatMaluti(loansOwed)}</>}

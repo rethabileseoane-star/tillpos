@@ -93,6 +93,12 @@ create table if not exists sales (
   "voidedAt"      bigint,
   note            text not null default '',
   "cashierName"   text not null default '',
+  "customerName"  text not null default '',
+  "writtenOffAt"  bigint,
+  "writeOffDate"  date,
+  "writtenOffAmount" bigint not null default 0,
+  "writeOffReason" text not null default '',
+  "writtenOffBy"  text not null default '',
   "createdAt"     bigint not null,
   "updatedAt"     bigint not null,
   "deletedAt"     bigint,
@@ -153,6 +159,7 @@ create table if not exists cash_movements (
   kind          text,
   "businessDate" date not null,
   note          text not null default '',
+  "staffName"   text not null default '',
   "createdAt"   bigint not null,
   "updatedAt"   bigint not null,
   "deletedAt"   bigint,
@@ -251,6 +258,16 @@ alter table sale_lines add constraint sale_lines_shop_sale_fkey
 
 -- Keep the cashier-name upgrade from the previous schema.
 alter table sales add column if not exists "cashierName" text not null default '';
+
+-- Credit sales and bad-debt write-offs. Additive, with defaults, so an older
+-- build can still upsert a cash sale without naming every column.
+alter table sales add column if not exists "customerName" text not null default '';
+alter table sales add column if not exists "writtenOffAt" bigint;
+alter table sales add column if not exists "writeOffDate" date;
+alter table sales add column if not exists "writtenOffAmount" bigint not null default 0;
+alter table sales add column if not exists "writeOffReason" text not null default '';
+alter table sales add column if not exists "writtenOffBy" text not null default '';
+alter table cash_movements add column if not exists "staffName" text not null default '';
 
 -- ---------------------------------------------------------------------------
 -- Indexes

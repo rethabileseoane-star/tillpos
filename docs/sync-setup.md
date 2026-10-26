@@ -31,7 +31,7 @@ confusion:
 | Login | What it is for | Where it lives |
 |---|---|---|
 | **Shop sync login** | Lets that shop's phones send sales and catalog changes to Supabase. One shared email and password per shop. | **More → Cloud sync** |
-| **Staff login** | Lets a person open the till. The owner sees every section; a cashier sees Sell and Catalog only. | **More → Staff & app lock** |
+| **Staff login** | Lets a person open the till. The owner sees every section; a cashier sees Sell, Catalog and a money-free History. | **More → Staff & app lock** |
 
 ## How the shops are separated
 
@@ -74,6 +74,19 @@ project.
 
 This creates the six tables, the sync sequence, the access rules and the
 per-shop keys. It is safe to run again later.
+
+**Credit-sale upgrade:** the same script adds the credit columns to `sales`
+(`customerName`, `writtenOffAt`, `writeOffDate`, `writtenOffAmount`,
+`writeOffReason`, `writtenOffBy`) and `staffName` to `cash_movements`. Run it
+**before** installing the build that supports credit. PostgREST refuses a row
+that names a column the table does not have, so a new build syncing against the
+old schema would park its changes in the outbox until the upgrade runs. Existing
+rows get safe defaults, and re-running the script changes nothing.
+
+If you prefer the smallest possible change, run `supabase/credit-upgrade.sql`
+instead of the whole schema. It contains the same seven `alter table ... add
+column if not exists` statements and a verification query that should list seven
+rows.
 
 **Upgrading an existing single-shop project:** running the updated schema adds
 the `shopId` column to every existing row and backfills it to `shop-a`. Existing
@@ -173,11 +186,13 @@ On the original till, open **More → Staff & app lock**.
 
 What a cashier can and cannot do:
 
-- **Can:** use Sell, including ad-hoc items with just a name and price; browse
-  Catalog read-only; sign in with their own name.
-- **Cannot:** open History, Money, Z-Report or Settings; see the drawer cash
-  balance; see cost or profit; add, edit, import, export or stock-adjust catalog
-  items; void or refund a sale; manage staff, shops or sync.
+- **Can:** use Sell, including ad-hoc items with just a name and price and
+  credit sales; browse Catalog read-only; open today's History with every price,
+  total, cost and cash figure hidden; take a payment against any outstanding
+  credit sale or write off an uncollectible debt.
+- **Cannot:** see sale totals, revenue, profit, cost or drawer cash; export or
+  print reports; add, edit, import, export or stock-adjust catalog items; void
+  or refund a sale; manage staff, shops or sync.
 - If a cashier forgets their PIN, they see **Ask the owner**. The owner signs in
   and uses **More → Staff & app lock → Reset** on that cashier. Past sales keep
   the name.
@@ -307,6 +322,11 @@ local database.
   goes negative and you correct it with a stock adjustment.
 - **Cash is one drawer per shop.** Every device's payments feed that shop's
   drawer figures. Cashiers do not see the drawer balance; the owner does.
+- **Credit is per shop and per sale.** A credit sale names the customer and
+  carries its unpaid balance. Any till can take a payment or write off that debt
+  from **History → Credit book**; payments are cash movements, so they reach the
+  shop's drawer and journals, while a write-off is a bad-debt expense. Sync
+  before closing if the owner needs every till's debt book in one Z-report.
 - **Use Lock now at a handover.** The till also locks whenever the app is
   launched or reloaded. Cashiers never reach Settings, so the owner should lock
   before passing the phone back.
@@ -326,7 +346,9 @@ local database.
 | "That shop code is already on this phone" | Shop codes are permanent. Use a different code for a genuinely different shop, or switch to the existing one. |
 | A shop disappeared after a registry reset | It still has its own database. Add it again with the **same shop code**; the app will reuse the existing data instead of seeding a blank one. |
 | "Set the owner password before adding a cashier" | The owner account still uses the old PIN. Open **More → Staff & app lock → Set password**, then add the cashier. |
-| A cashier sees History or Settings | They are signed in as the owner. Tap **Lock now** and have them choose their own name. |
+| A cashier sees Money, Z-Report or Settings | They are signed in as the owner. Tap **Lock now** and have them choose their own name. |
+| A cashier cannot open History | They are on an old build. The current build allows today's History with amounts hidden. |
+| A credit payment will not sync | Run the credit-column part of `supabase/schema.sql` (step 2), then tap **Sync now**. The payment is already saved on this phone. |
 | A cashier forgot their PIN | The owner signs in and taps **Reset** next to that cashier in **More → Staff & app lock**. |
 | A cashier cannot see a cashier account | Staff accounts are per shop and per phone. Add that cashier in that shop on the phone they carry. |
 

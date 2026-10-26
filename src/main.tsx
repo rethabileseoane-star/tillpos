@@ -29,7 +29,7 @@ const router = createHashRouter([
   { path: '/', element: <App />, children: [
     { index: true, element: <SellScreen /> },
     { path: 'catalog', element: <CatalogScreen /> },
-    { path: 'history', element: <OwnerOnly><HistoryScreen /></OwnerOnly> },
+    { path: 'history', element: <HistoryScreen /> },
     { path: 'money', element: <OwnerOnly><MoneyScreen /></OwnerOnly> },
     { path: 'reports', element: <OwnerOnly><ReportsScreen /></OwnerOnly> },
     { path: 'settings', element: <OwnerOnly><SettingsScreen /></OwnerOnly> },

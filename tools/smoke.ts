@@ -39,7 +39,15 @@ import type {
   StockMovement,
   StockReason,
 } from '../src/db/types'
-import { ACCOUNTS, balanceSheet, cashFlow, incomeStatement, trialBalances } from '../src/features/reports/accounts'
+import { ACCOUNTS, balanceSheet, cashFlow, incomeStatement, outstandingReceivables, trialBalances } from '../src/features/reports/accounts'
+import {
+  creditBalance,
+  creditPaidMap,
+  creditState,
+  creditTotals,
+  effectiveWriteOffAmount,
+  outstandingCredit,
+} from '../src/features/credit/credit'
 import { remoteWins, stripServerFields, withShopId, SYNC_ENTITIES } from '../src/sync/merge'
 import {
   cleanShopCode,
@@ -252,7 +260,12 @@ check('ad-hoc lines are never flagged as over-stock', () => {
 
 console.log('accounts')
 
-const mkSale = (total: number, receiptNo: string, status: Sale['status'] = 'completed'): Sale => ({
+const mkSale = (
+  total: number,
+  receiptNo: string,
+  status: Sale['status'] = 'completed',
+  over: Partial<Sale> = {},
+): Sale => ({
   id: receiptNo,
   receiptNo,
   businessDate: '2026-10-12',
@@ -269,6 +282,7 @@ const mkSale = (total: number, receiptNo: string, status: Sale['status'] = 'comp
   deletedAt: null,
   rev: 1,
   deviceId: 'd',
+  ...over,
 })
 const mkLine = (saleId: string, productId: string, unitPrice: number, qty: number): SaleLine => ({
   id: `${saleId}-${productId}`,
@@ -286,7 +300,12 @@ const mkLine = (saleId: string, productId: string, unitPrice: number, qty: numbe
   rev: 1,
   deviceId: 'd',
 })
-const mkCash = (reason: CashReason, delta: number, businessDate = '2026-10-12'): CashMovement => ({
+const mkCash = (
+  reason: CashReason,
+  delta: number,
+  businessDate = '2026-10-12',
+  over: Partial<CashMovement> = {},
+): CashMovement => ({
   id: `${reason}-${businessDate}-${delta}`,
   reason,
   delta,
@@ -298,6 +317,7 @@ const mkCash = (reason: CashReason, delta: number, businessDate = '2026-10-12'):
   deletedAt: null,
   rev: 1,
   deviceId: 'd',
+  ...over,
 })
 const mkStock = (
   productId: string,
@@ -559,6 +579,261 @@ check('the cash flow statement classifies and ties to the drawer', () => {
   assert.equal(cf.financingOut, fromMaluti(8000), 'drawing + loan repayment')
   assert.equal(cf.closing, fromMaluti(25500), 'ties to the all-time drawer balance')
   assert.equal(cf.net, -fromMaluti(4500))
+})
+
+// The shelf after four sugars left: 46 opened − 4 sold. The opening movement
+// puts the stock on the books; the completed sale line takes its cost out.
+const creditSugar = product({
+  id: 's1',
+  barcode: 'S1',
+  name: 'Sugar',
+  price: fromMaluti(1500),
+  cost: fromMaluti(1400),
+  stockQty: 42,
+})
+const creditStock = () => [mkStock('s1', 46, 'opening'), mkStock('s1', -4, 'sale')]
+const creditSale = (receiptNo: string, status: Sale['status'] = 'completed', over: Partial<Sale> = {}) =>
+  mkSale(fromMaluti(6000), receiptNo, status, {
+    paymentMethod: 'credit',
+    amountTendered: null,
+    change: null,
+    customerName: 'Mrs Banda',
+    ...over,
+  })
+
+check('a credit sale bills revenue and carries a receivable', () => {
+  const sale = creditSale('C001')
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const stmt = incomeStatement([sale], lines, [creditSugar], [])
+
+  assert.equal(stmt.revenue, fromMaluti(6000), 'credit is revenue when the goods leave')
+  assert.equal(stmt.cogs, fromMaluti(5600))
+  assert.equal(stmt.netProfit, fromMaluti(400))
+  assert.equal(stmt.badDebts, 0)
+
+  const tb = trialBalances([sale], lines, [], [creditSugar], creditStock())
+  assert.equal(tb.difference, 0, 'debits must equal credits')
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), fromMaluti(6000))
+  assert.equal(by.get(ACCOUNTS.SALES), -fromMaluti(6000))
+
+  const bs = balanceSheet([], [creditSugar], creditStock(), [sale], lines)
+  assert.equal(bs.receivables, fromMaluti(6000))
+  assert.equal(bs.check, 0)
+  assert.equal(outstandingReceivables([sale], []), fromMaluti(6000))
+})
+
+check('a credit payment moves cash and reduces the receivable without a second sale', () => {
+  const sale = creditSale('C001')
+  const payment = mkCash('credit_payment', fromMaluti(2000), '2026-10-12', {
+    id: 'pay-1',
+    refId: 'C001',
+  })
+  const cash = [payment]
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+
+  const stmt = incomeStatement([sale], lines, [creditSugar], cash)
+  assert.equal(stmt.revenue, fromMaluti(6000), 'the payment is not a new sale')
+  assert.equal(stmt.netProfit, fromMaluti(400))
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], creditStock())
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.CASH), fromMaluti(2000))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), fromMaluti(4000))
+
+  const bs = balanceSheet(cash, [creditSugar], creditStock(), [sale], lines)
+  assert.equal(bs.cash, fromMaluti(2000))
+  assert.equal(bs.receivables, fromMaluti(4000))
+  assert.equal(bs.check, 0)
+
+  assert.equal(creditBalance(sale, creditPaidMap(cash)), fromMaluti(4000))
+  assert.equal(outstandingCredit([sale], cash), fromMaluti(4000))
+  assert.equal(cashFlow(cash, ['2026-10-12']).operatingIn, fromMaluti(2000))
+})
+
+check('writing off a debt books a bad-debt expense and clears the receivable', () => {
+  const sale = creditSale('C001', 'completed', {
+    writtenOffAt: 1,
+    writeOffDate: '2026-10-12',
+    writtenOffAmount: fromMaluti(4000),
+    writeOffReason: 'Customer moved away',
+    writtenOffBy: 'Owner',
+  })
+  const payment = mkCash('credit_payment', fromMaluti(2000), '2026-10-12', {
+    id: 'pay-1',
+    refId: 'C001',
+  })
+  const cash = [payment]
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+
+  const stmt = incomeStatement([sale], lines, [creditSugar], cash)
+  assert.equal(stmt.revenue, fromMaluti(6000), 'the sale keeps its revenue')
+  assert.equal(stmt.badDebts, fromMaluti(4000), 'only the unpaid part is written off')
+  assert.equal(stmt.netProfit, -fromMaluti(3600), 'cash received 2000 − cost 5600')
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], creditStock())
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined, 'the receivable is fully cleared')
+  assert.equal(by.get(ACCOUNTS.BAD_DEBTS), fromMaluti(4000))
+
+  const bs = balanceSheet(cash, [creditSugar], creditStock(), [sale], lines)
+  assert.equal(bs.receivables, 0)
+  assert.equal(bs.retainedProfit, -fromMaluti(3600))
+  assert.equal(bs.check, 0)
+  assert.equal(outstandingReceivables([sale], cash), 0)
+})
+
+check('voiding a credit sale reverses revenue and the receivable', () => {
+  const unpaid = creditSale('C001', 'voided')
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const stock = [...creditStock(), mkStock('s1', 4, 'void')]
+
+  const stmt = incomeStatement([unpaid], lines, [creditSugar], [])
+  assert.equal(stmt.revenue, fromMaluti(6000))
+  assert.equal(stmt.returns, fromMaluti(6000), 'a void reverses the full revenue')
+  assert.equal(stmt.cogs, 0, 'voided goods are back on the shelf')
+  assert.equal(stmt.netProfit, 0)
+
+  const tb = trialBalances([unpaid], lines, [], [creditSugar], stock)
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined, 'an unpaid debt is cancelled')
+  assert.equal(by.get(ACCOUNTS.RETURNS), fromMaluti(6000))
+})
+
+check('voiding a part-paid credit sale refunds only the cash received', () => {
+  const sale = creditSale('C001', 'voided')
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const cash = [
+    mkCash('credit_payment', fromMaluti(2000), '2026-10-12', { id: 'pay-1', refId: 'C001' }),
+    mkCash('void', -fromMaluti(2000), '2026-10-12', { id: 'refund-1', refId: 'C001' }),
+  ]
+  const stock = [...creditStock(), mkStock('s1', 4, 'void')]
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], stock)
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.CASH), undefined, 'cash in and refund cancel')
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined)
+  assert.equal(by.get(ACCOUNTS.RETURNS), fromMaluti(6000))
+
+  const stmt = incomeStatement([sale], lines, [creditSugar], cash)
+  assert.equal(stmt.netProfit, 0)
+  assert.equal(cashFlow(cash, ['2026-10-12']).operatingIn, 0)
+  assert.equal(cashFlow(cash, ['2026-10-12']).closing, 0)
+})
+
+check('a void wins over a stale write-off on the same sale', () => {
+  // Two offline tills can write off and void the same sale before they sync.
+  // The merged row may carry both flags; the books must count the void once and
+  // ignore the write-off, or the same loss is booked twice.
+  const sale = creditSale('C001', 'voided', {
+    writtenOffAt: 1,
+    writeOffDate: '2026-10-12',
+    writtenOffAmount: fromMaluti(6000),
+    writeOffReason: 'Stale write-off',
+    writtenOffBy: 'Owner',
+  })
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const stock = [...creditStock(), mkStock('s1', 4, 'void')]
+
+  const stmt = incomeStatement([sale], lines, [creditSugar], [], undefined, stock)
+  assert.equal(stmt.badDebts, 0, 'a voided sale has no bad debt')
+  assert.equal(stmt.netProfit, 0)
+
+  const tb = trialBalances([sale], lines, [], [creditSugar], stock)
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.BAD_DEBTS), undefined)
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined)
+
+  const bs = balanceSheet([], [{ ...creditSugar, stockQty: 46 }], stock, [sale], lines)
+  assert.equal(bs.receivables, 0)
+  assert.equal(bs.check, 0)
+  assert.equal(creditTotals([sale], [], ['2026-10-12']).writtenOff, 0)
+})
+
+check('a payment after a write-off reduces the bad debt and keeps the books tied', () => {
+  // A till that had not yet heard about the write-off can still take a payment.
+  // The payment is real, so it must reduce the loss rather than leave a negative
+  // receivable or an overstated bad-debt expense.
+  const sale = creditSale('C001', 'completed', {
+    writtenOffAt: 1,
+    writeOffDate: '2026-10-12',
+    writtenOffAmount: fromMaluti(6000),
+    writeOffReason: 'Customer moved away',
+    writtenOffBy: 'Owner',
+  })
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const cash = [
+    mkCash('credit_payment', fromMaluti(2000), '2026-10-13', {
+      id: 'pay-1',
+      refId: 'C001',
+    }),
+  ]
+  const stock = creditStock()
+
+  const stmt = incomeStatement([sale], lines, [creditSugar], cash)
+  assert.equal(stmt.badDebts, fromMaluti(4000), 'the recovery reduces the loss')
+  assert.equal(stmt.netProfit, -fromMaluti(3600))
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], stock)
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.BAD_DEBTS), fromMaluti(4000))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined, 'no negative receivable')
+
+  const bs = balanceSheet(cash, [creditSugar], stock, [sale], lines)
+  assert.equal(bs.receivables, 0)
+  assert.equal(bs.check, 0)
+
+  const totals = creditTotals([sale], cash, ['2026-10-12'])
+  assert.equal(totals.writtenOff, fromMaluti(4000))
+  assert.equal(totals.outstanding, 0)
+  assert.equal(totals.debtorCount, 0)
+  assert.equal(creditState(sale, creditPaidMap(cash)), 'written-off')
+
+  // If the recovery covers the whole debt, there is no loss left. The sale is
+  // paid for the debt book even though its write-off history stays on the row.
+  const recovered = [
+    mkCash('credit_payment', fromMaluti(6000), '2026-10-13', {
+      id: 'pay-2',
+      refId: 'C001',
+    }),
+  ]
+  const recoveredPaid = creditPaidMap(recovered)
+  assert.equal(effectiveWriteOffAmount(sale, recoveredPaid.get('C001') ?? 0), 0)
+  assert.equal(creditState(sale, recoveredPaid), 'paid')
+})
+
+check('credit totals use the right day for sales, payments and write-offs', () => {
+  const sale = creditSale('C001')
+  const payment = mkCash('credit_payment', fromMaluti(2000), '2026-10-13', {
+    id: 'pay-1',
+    refId: 'C001',
+  })
+  const written = creditSale('C002', 'completed', {
+    writtenOffAt: 1,
+    writeOffDate: '2026-10-14',
+    writtenOffAmount: fromMaluti(6000),
+  })
+  const cash = [payment]
+
+  const saleDay = creditTotals([sale, written], cash, ['2026-10-12'])
+  assert.equal(saleDay.creditSales, fromMaluti(12000), 'both sales were billed that day')
+  assert.equal(saleDay.collected, 0)
+  assert.equal(saleDay.writtenOff, 0)
+  assert.equal(saleDay.outstanding, fromMaluti(4000), 'outstanding is the position now')
+
+  const payDay = creditTotals([sale, written], cash, ['2026-10-13'])
+  assert.equal(payDay.creditSales, 0)
+  assert.equal(payDay.collected, fromMaluti(2000))
+
+  const writeDay = creditTotals([sale, written], cash, ['2026-10-14'])
+  assert.equal(writeDay.writtenOff, fromMaluti(6000))
+  assert.equal(writeDay.debtorCount, 1, 'the written-off sale no longer owes anything')
 })
 
 console.log('merge rules')

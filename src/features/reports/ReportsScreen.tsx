@@ -4,8 +4,14 @@ import { db } from '@/db'
 import { formatMaluti, type Cents } from '@/domain/money'
 import { businessDate } from '@/features/sales/salesService'
 import { summariseCash } from '@/features/cash/cashService'
+import { creditTotals } from '@/features/credit/credit'
 import { exportSalesCsv } from './exportCsv'
-import { exportCashLedgerCsv, exportStatementsCsv, exportStockLedgerCsv } from './exportAccounts'
+import {
+  exportCashLedgerCsv,
+  exportCreditJournalCsv,
+  exportStatementsCsv,
+  exportStockLedgerCsv,
+} from './exportAccounts'
 import { downloadBlob } from '@/features/catalog/csvImport'
 import { feedbackError } from '@/ui/feedback'
 import type { Sale, SaleLine } from '@/db/types'
@@ -36,10 +42,18 @@ export function ReportsScreen() {
 
   const cash = useLiveQuery(() => db.cashMovements.toArray(), []) ?? []
 
+  // The Z-report's sales list is capped for speed; the debt position needs the
+  // whole book, so read every sale for that one figure.
+  const allSales = useLiveQuery(() => db.sales.toArray(), []) ?? []
+
   const report = useMemo(() => buildReport(sales, lines, days), [sales, lines, days])
   const window = useMemo(
     () => summariseCash(cash, report.days.map((d) => d.date)),
     [cash, report],
+  )
+  const credit = useMemo(
+    () => creditTotals(allSales, cash, report.days.map((d) => d.date)),
+    [allSales, cash, report],
   )
 
   // Windows for the exports: the report's dates, plus a timestamp range for the
@@ -60,7 +74,7 @@ export function ReportsScreen() {
     <div className="px-4 py-4">
       <h1 className="text-xl font-bold">Z-Report</h1>
       <p className="text-xs text-slate-400">
-        Cash reconciliation for the last {days} days
+        Cash, sales and credit for the last {days} days
       </p>
 
       <div className="mt-3 flex gap-2">
@@ -106,6 +120,12 @@ export function ReportsScreen() {
           <p className="text-[10px] uppercase tracking-wider text-slate-400">Cash sales ({days}d)</p>
           <p className="font-mono text-lg font-semibold text-cash-400">
             {formatMaluti(window.sales)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Credit collected ({days}d)</p>
+          <p className="font-mono text-lg font-semibold text-cash-400">
+            {formatMaluti(window.creditPayments)}
           </p>
         </div>
         <div className="card">
@@ -162,7 +182,7 @@ export function ReportsScreen() {
       </h2>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <div className="card">
-          <p className="text-[10px] uppercase tracking-wider text-slate-400">Net cash</p>
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Net sales</p>
           <p className="font-mono text-2xl font-bold text-cash-400">
             {formatMaluti(report.net)}
           </p>
@@ -183,9 +203,39 @@ export function ReportsScreen() {
         </div>
       </div>
 
+      {/* Credit book at a glance */}
+      <h2 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        Credit
+      </h2>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Credit sales ({days}d)</p>
+          <p className="font-mono text-xl font-semibold">{formatMaluti(credit.creditSales)}</p>
+        </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Owed now</p>
+          <p className="font-mono text-xl font-semibold text-amber-400">
+            {formatMaluti(credit.outstanding)}
+          </p>
+          <p className="text-[10px] text-slate-500">{credit.debtorCount} open</p>
+        </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Collected ({days}d)</p>
+          <p className="font-mono text-xl font-semibold text-cash-400">
+            {formatMaluti(credit.collected)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Written off ({days}d)</p>
+          <p className="font-mono text-xl font-semibold text-rose-300">
+            {formatMaluti(credit.writtenOff)}
+          </p>
+        </div>
+      </div>
+
       {/* Daily bars */}
       <h2 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        Daily net
+        Daily net sales
       </h2>
       <div className="mt-2 flex h-32 items-end gap-1">
         {trend.map((d) => (
@@ -285,8 +335,8 @@ export function ReportsScreen() {
             </svg>
           </span>
           <span className="mt-0.5 block text-[11px] text-slate-400">
-            Sales journal · receipts · payments · trial balance · P&L ·
-            cash flow · balance sheet · inventory
+            Sales · credit sales · receipts · credit receipts · payments · bad
+            debts · trial balance · P&L · cash flow · balance sheet · inventory
           </span>
         </button>
       </div>
@@ -296,8 +346,8 @@ export function ReportsScreen() {
         Spreadsheet exports (CSV)
       </h2>
       <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-        The first three follow the {days}-day window above. Statements carry the
-        P&L for that window plus a balance sheet as of now.
+        Each export follows the {days}-day window above. Statements carry the P&L
+        for that window plus a balance sheet as of now.
       </p>
       <div className="mt-2 space-y-2">
         <ExportButton
@@ -312,6 +362,13 @@ export function ReportsScreen() {
           sub="Every drawer movement with a running balance"
           onTap={() =>
             exportFile(exportCashLedgerCsv(rangeDates), `cash-ledger-${range}.csv`)
+          }
+        />
+        <ExportButton
+          label="Credit journal"
+          sub="Credit sales, collections and bad debts"
+          onTap={() =>
+            exportFile(exportCreditJournalCsv(rangeDates), `credit-${range}.csv`)
           }
         />
         <ExportButton

@@ -30,6 +30,7 @@ import { lookupProduct } from '../src/features/cart/CartContext'
 import { exportSalesCsv } from '../src/features/reports/exportCsv'
 import {
   exportCashLedgerCsv,
+  exportCreditJournalCsv,
   exportStatementsCsv,
   exportStockLedgerCsv,
 } from '../src/features/reports/exportAccounts'
@@ -60,6 +61,12 @@ import {
   removeCashier,
 } from '../src/features/security/staff'
 import { addShop } from '../src/features/shops/shopManager'
+import { recordCreditPayment, writeOffCreditSale } from '../src/features/credit/creditService'
+import {
+  creditBalance,
+  creditPaidMap,
+  outstandingCredit,
+} from '../src/features/credit/credit'
 import { getActiveDbName, listShops } from '../src/shops/registry'
 import {
   disableSync,
@@ -720,6 +727,290 @@ async function main() {
     assert.equal(other.balance, 3000)
   })
 
+  console.log('credit sales')
+
+  await check('a credit sale records the customer, stock and any deposit', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 2)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: '  Mrs   Banda ',
+      amountPaidNow: 50000,
+      cashierName: 'Thabo',
+    })
+
+    assert.equal(sale.paymentMethod, 'credit')
+    assert.equal(sale.customerName, 'Mrs Banda')
+    assert.equal(sale.total, 300000)
+    assert.equal(sale.amountTendered, null)
+    assert.equal(sale.change, null)
+    assert.equal(sale.cashierName, 'Thabo')
+    assert.equal(await stockOf('6001234567892'), 38, 'credit still takes the goods off the shelf')
+
+    const cash = await db.cashMovements.toArray()
+    assert.equal(cash.length, 1, 'only the deposit should be in the drawer')
+    assert.equal(cash[0]!.reason, 'credit_payment')
+    assert.equal(cash[0]!.delta, 50000)
+    assert.equal(cash[0]!.refId, sale.id)
+    assert.equal(cash[0]!.staffName, 'Thabo')
+    assert.match(cash[0]!.note, /Mrs Banda/)
+
+    const summary = summariseCash(cash)
+    assert.equal(summary.sales, 0, 'a credit sale is not cash')
+    assert.equal(summary.creditPayments, 50000)
+    assert.equal(summary.balance, 50000)
+    assert.equal(await cashBalance(), 50000)
+    assert.equal(await outstandingCredit(await db.sales.toArray(), cash), 250000)
+
+    // The sync payload must carry the new columns; a missing column would only
+    // show up as a parked outbox row against the real PostgREST schema.
+    const queued = await db.outbox.toArray()
+    const salePayload = JSON.parse(
+      queued.find((r) => r.entity === 'sales' && r.entityId === sale.id)!.payload,
+    )
+    assert.equal(salePayload.customerName, 'Mrs Banda')
+    const depositPayload = JSON.parse(
+      queued.find((r) => r.entity === 'cash_movements' && r.entityId === cash[0]!.id)!
+        .payload,
+    )
+    assert.equal(depositPayload.staffName, 'Thabo')
+  })
+
+  await check('a credit sale needs a name and a deposit within the total', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const line = await lineFor('6001234567892', 1)
+
+    await assert.rejects(
+      commitSale({
+        lines: [line],
+        paymentMethod: 'credit',
+        amountTendered: null,
+        customerName: '   ',
+      }),
+      /customer name/,
+    )
+    await assert.rejects(
+      commitSale({
+        lines: [line],
+        paymentMethod: 'credit',
+        amountTendered: null,
+        customerName: 'Mrs Banda',
+        amountPaidNow: -1,
+      }),
+      /negative/,
+    )
+    await assert.rejects(
+      commitSale({
+        lines: [line],
+        paymentMethod: 'credit',
+        amountTendered: null,
+        customerName: 'Mrs Banda',
+        amountPaidNow: 150001,
+      }),
+      /more than the sale total/,
+    )
+    assert.equal(await db.sales.count(), 0)
+  })
+
+  await check('a part-payment reduces the balance without making a second sale', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 2)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: 'Mrs Banda',
+    })
+    const result = await recordCreditPayment({
+      saleId: sale.id,
+      amount: 100000,
+      note: 'Cash at the shop',
+      staffName: 'Cashier A',
+    })
+
+    assert.equal(result.balance, 200000)
+    assert.equal(result.movement.reason, 'credit_payment')
+    assert.equal(result.movement.refId, sale.id)
+    assert.equal(result.movement.staffName, 'Cashier A')
+    assert.match(result.movement.note, /Mrs Banda/)
+    assert.equal(await db.sales.count(), 1, 'a payment must not create a second sale')
+    assert.equal(await cashBalance(), 100000)
+
+    const cash = await db.cashMovements.toArray()
+    assert.equal(creditBalance(sale, creditPaidMap(cash)), 200000)
+    assert.equal(await outstandingCredit(await db.sales.toArray(), cash), 200000)
+
+    await assert.rejects(
+      recordCreditPayment({ saleId: sale.id, amount: 200001 }),
+      /Only M2,000 is still owed/,
+    )
+    await assert.rejects(
+      recordCreditPayment({ saleId: sale.id, amount: 0 }),
+      /greater than zero/,
+    )
+  })
+
+  await check('a cashier can write off any outstanding debt, and it stops all further action', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 2)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: 'Mrs Banda',
+    })
+    await recordCreditPayment({ saleId: sale.id, amount: 100000, staffName: 'Cashier A' })
+    const written = await writeOffCreditSale({
+      saleId: sale.id,
+      reason: 'Customer moved away',
+      staffName: 'Cashier A',
+    })
+
+    assert.equal(written, 200000, 'only the remaining balance is written off')
+    const updated = (await db.sales.get(sale.id))!
+    assert.equal(updated.status, 'completed', 'a write-off is not a void')
+    assert.equal(updated.writtenOffAmount, 200000)
+    assert.equal(updated.writeOffDate, businessDate())
+    assert.equal(updated.writeOffReason, 'Customer moved away')
+    assert.equal(updated.writtenOffBy, 'Cashier A')
+    assert.ok(updated.writtenOffAt, 'the timestamp was not stored')
+    assert.equal(await db.cashMovements.count(), 1, 'a write-off must not move the drawer')
+    assert.equal(await cashBalance(), 100000)
+    assert.equal(
+      await outstandingCredit(await db.sales.toArray(), await db.cashMovements.toArray()),
+      0,
+    )
+
+    const writeOffPayload = JSON.parse(
+      (await db.outbox.toArray()).find(
+        (r) => r.entity === 'sales' && r.entityId === sale.id,
+      )!.payload,
+    )
+    assert.equal(writeOffPayload.writtenOffAmount, 200000)
+    assert.equal(writeOffPayload.writeOffReason, 'Customer moved away')
+    assert.equal(writeOffPayload.writtenOffBy, 'Cashier A')
+
+    await assert.rejects(
+      recordCreditPayment({ saleId: sale.id, amount: 100 }),
+      /written off/,
+    )
+    await assert.rejects(
+      writeOffCreditSale({ saleId: sale.id, reason: 'Again' }),
+      /already been written off/,
+    )
+    await assert.rejects(voidSale(sale.id, 'too late'), /written-off/)
+  })
+
+  await check('voiding a part-paid credit sale refunds only the cash received', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 2)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: 'Mrs Banda',
+    })
+    await recordCreditPayment({ saleId: sale.id, amount: 100000 })
+    await voidSale(sale.id, 'Customer changed their mind')
+
+    const updated = (await db.sales.get(sale.id))!
+    assert.equal(updated.status, 'voided')
+    assert.equal(await stockOf('6001234567892'), 40, 'the goods came back to the shelf')
+
+    const cash = await db.cashMovements.toArray()
+    const refund = cash.find((m) => m.reason === 'void')
+    assert.ok(refund, 'the refund was not recorded')
+    assert.equal(refund!.delta, -100000, 'only the money actually received is refunded')
+    assert.equal(refund!.refId, sale.id)
+    assert.equal(await cashBalance(), 0)
+    assert.equal(
+      await outstandingCredit(await db.sales.toArray(), cash),
+      0,
+      'the unpaid balance is cancelled, not refunded',
+    )
+  })
+
+  await check('the credit journals and statements carry the debt and the bad debt', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sugar = await commitSale({
+      lines: [await lineFor('6001234567892', 2)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: 'Mrs Banda',
+      amountPaidNow: 100000,
+    })
+    const oil = await commitSale({
+      lines: [await lineFor('6001234567814', 1)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: 'Mr Dlamini',
+    })
+    await recordCreditPayment({ saleId: oil.id, amount: 100000, staffName: 'Cashier A' })
+    await writeOffCreditSale({
+      saleId: oil.id,
+      reason: 'Uncollectible',
+      staffName: 'Cashier A',
+    })
+
+    const data = await loadBooksData()
+    const pack = buildBookPack(data, [businessDate()])
+    const creditSales = pack.find((t) => t.title === 'Credit sales journal')!
+    assert.equal(creditSales.rows.length, 2)
+    assert.match(creditSales.rows.join(','), /Mrs Banda/)
+    assert.match(creditSales.rows.join(','), /Written off/)
+    assert.match(creditSales.notes.join(','), /Still owed on those sales \(M\): 2,000\.00/)
+    assert.match(creditSales.notes.join(','), /Written off in this period \(M\): 5,500\.00/)
+    assert.match(creditSales.notes.join(','), /All credit still owed now \(M\): 2,000\.00/)
+
+    // The sugar deposit and the later oil payment = two collections.
+    const creditReceipts = pack.find((t) => t.title === 'Credit receipts journal')!
+    assert.equal(creditReceipts.rows.length, 2)
+    assert.match(creditReceipts.rows.join(','), /Cashier A/)
+    assert.match(creditReceipts.notes[0]!, /Total collected \(M\): 2,000\.00/)
+
+    const badDebts = pack.find((t) => t.title === 'Bad debts journal')!
+    assert.equal(badDebts.rows.length, 1)
+    assert.match(badDebts.rows.join(','), /Uncollectible/)
+    assert.match(badDebts.rows.join(','), /Cashier A/)
+    assert.match(badDebts.notes[0]!, /Total written off \(M\): 5,500\.00/)
+
+    const tb = pack.find((t) => t.title === 'Trial balance')!
+    assert.ok(
+      tb.rows.some((r) => r[1] === 'Customers who owe (credit)' && r[2] === '2,000.00'),
+      'receivable missing from the trial balance',
+    )
+    assert.ok(
+      tb.rows.some((r) => r[1] === 'Bad debts written off' && r[2] === '5,500.00'),
+      'bad debt missing from the trial balance',
+    )
+    assert.match(tb.notes[0]!, /books balance/)
+
+    const pnl = pack.find((t) => t.title === 'Profit & loss statement')!
+    assert.match(pnl.rows.join(','), /Bad debts written off,-5,500\.00/)
+    const bs = pack.find((t) => t.title === 'Balance sheet')!
+    assert.match(bs.rows.join(','), /Customers who owe \(credit\),2,000\.00/)
+    assert.match(bs.notes[0]!, /Assets equal/)
+
+    // The credit CSV carries the per-sale rows and the three footers.
+    const creditCsv = await (await exportCreditJournalCsv([businessDate()])).text()
+    assert.match(creditCsv, /^date,receipt_no,customer,total_mwk,paid_mwk,balance_mwk/m)
+    assert.match(creditCsv, /Mrs Banda/)
+    assert.match(creditCsv, /# Credit still owed now \(MWK\): 2000\.00/)
+    assert.match(creditCsv, /# CREDIT RECEIPTS IN PERIOD/)
+    assert.match(creditCsv, /# BAD DEBTS WRITTEN OFF IN PERIOD/)
+
+    // The sales CSV keeps credit revenue, credit collections and the debt apart.
+    const salesCsv = await (await exportSalesCsv([businessDate()])).text()
+    assert.match(salesCsv, /# Credit sales billed in period \(MWK\): 9500/)
+    assert.match(salesCsv, /# Credit collected in period \(MWK\): 2000/)
+    assert.match(salesCsv, /# Credit still owed now \(MWK\): 2000/)
+    assert.match(salesCsv, /# Bad debts written off in period \(MWK\): 5500/)
+  })
+
   console.log('buying stock')
 
   await check('buying stock moves the money out and the stock up', async () => {
@@ -889,7 +1180,7 @@ async function main() {
     await bookUp()
     const data = await loadBooksData()
     const tables = buildBookPack(data, [businessDate()])
-    assert.equal(tables.length, 8)
+    assert.equal(tables.length, 11)
 
     // Sales journal: one row per sale line.
     const journal = tables[0]!
@@ -906,31 +1197,31 @@ async function main() {
     assert.match(journal.notes[0]!, /Total of 2 lines \(M\): 19,000\.00/)
 
     // Receipts: float + money in + two sales, ending on the drawer figure.
-    const receipts = tables[1]!
+    const receipts = tables[2]!
     assert.equal(receipts.rows.length, 4)
     assert.match(receipts.rows[3]!.join(','), /16,500\.00/)
 
     // Payments: the depot purchase, the wage, and the banking.
-    const payments = tables[2]!
+    const payments = tables[4]!
     assert.equal(payments.rows.length, 3)
     assert.match(payments.rows.join(','), /Corner depot,14,000\.00/)
     assert.match(payments.notes.join(','), /Owner took \(M\): 3,000\.00/)
     assert.match(payments.notes.join(','), /Total paid out \(M\): 17,500\.00/)
 
     // Trial balance: debits equal credits to the tambala.
-    const tb = tables[3]!
+    const tb = tables[6]!
     const total = tb.rows[tb.rows.length - 1]!
     assert.deepEqual(total, ['', 'TOTAL', '162,000.00', '162,000.00'])
     assert.match(tb.notes[0]!, /books balance/)
 
     // P&L and cash flow.
-    const pnl = tables[4]!
+    const pnl = tables[7]!
     assert.match(pnl.rows.map((r) => r.join(',')).join('\n'), /NET PROFIT,900\.00/)
-    const cf = tables[5]!
+    const cf = tables[8]!
     assert.match(cf.rows.map((r) => r.join(',')).join('\n'), /CASH IN THE DRAWER AT THE END,16,500\.00/)
 
     // Balance sheet: assets equal liabilities + equity.
-    const bs = tables[6]!
+    const bs = tables[9]!
     const bsText = bs.rows.map((r) => r.join(',')).join('\n')
     assert.match(bsText, /TOTAL ASSETS,140,900\.00/)
     assert.match(bsText, /Loans owed,0\.00/)
@@ -938,7 +1229,7 @@ async function main() {
     assert.match(bs.notes[0]!, /agree with the tin and the shelf/)
 
     // Inventory: movements plus the shelf, worth M124,400 now.
-    const inv = tables[7]!
+    const inv = tables[10]!
     assert.match(inv.rows.join(','), /Sugar 1kg,NOW|NOW,Sugar 1kg/)
     assert.match(inv.notes[0]!, /Stock in the shop now is worth \(M\): 124,400\.00/)
   })
@@ -960,14 +1251,14 @@ async function main() {
     assert.equal(await cashBalance(), 0, 'refund brought the drawer back to zero')
 
     // Receipts: the sale goes in, the void comes straight back out.
-    const receipts = tables[1]!
+    const receipts = tables[2]!
     assert.equal(receipts.rows.length, 2)
     assert.match(receipts.rows[0]!.join(','), /3,000\.00,,3,000\.00$/, 'sale in, running balance 3,000')
     assert.match(receipts.rows[1]!.join(','), /0\.00,3,000\.00,0\.00$/, 'refund out, running balance 0')
 
     // P&L: gross revenue and the refund cancel; no cost books because the
     // sale was never completed.
-    const pnl = tables[4]!
+    const pnl = tables[7]!
     const pnlText = pnl.rows.map((r) => r.join(',')).join('\n')
     assert.match(pnlText, /Sales \(gross, before refunds\),3,000\.00/)
     assert.match(pnlText, /Less: refunds \(voided sales\),-3,000\.00/)
@@ -975,7 +1266,7 @@ async function main() {
     assert.match(pnlText, /NET PROFIT,0\.00/)
 
     // Cash flow: nothing came in and nothing went out when the dust settles.
-    const cf = tables[5]!
+    const cf = tables[8]!
     const cfText = cf.rows.map((r) => r.join(',')).join('\n')
     assert.match(cfText, /NET CHANGE IN CASH,0\.00/)
     assert.match(cfText, /CASH IN THE DRAWER AT THE END,0\.00/)

@@ -8,6 +8,12 @@ import type {
   StockReason,
 } from '@/db/types'
 import type { Cents } from '@/domain/money'
+import {
+  creditPaidMap,
+  effectiveWriteOffAmount,
+  outstandingCredit,
+  writeOffDate,
+} from '@/features/credit/credit'
 
 /**
  * The till's books engine — pure accounting maths with a chart of accounts and
@@ -42,6 +48,7 @@ export const CASH_REASON_LABEL: Record<CashReason, string> = {
   drawing: 'Owner took',
   expense: 'Paid out',
   loan_repay: 'Loan repaid',
+  credit_payment: 'Credit payment',
 }
 
 export const STOCK_REASON_LABEL: Record<StockReason, string> = {
@@ -57,6 +64,7 @@ export const STOCK_REASON_LABEL: Record<StockReason, string> = {
 export const ACCOUNTS = {
   CASH: 1100,
   INVENTORY: 1200,
+  RECEIVABLES: 1300,
   LOANS: 2500,
   CAPITAL: 3100,
   CONTRIBUTED: 3110,
@@ -65,6 +73,7 @@ export const ACCOUNTS = {
   RETURNS: 4200,
   COGS: 5100,
   EXPENSES: 6000,
+  BAD_DEBTS: 6100,
   PURCHASE_VARIANCE: 7210,
   STOCK_ADJUST: 7300,
 } as const
@@ -72,6 +81,7 @@ export const ACCOUNTS = {
 export const ACCOUNT_NAMES: Record<number, string> = {
   [ACCOUNTS.CASH]: 'Cash in drawer',
   [ACCOUNTS.INVENTORY]: 'Stock in the shop',
+  [ACCOUNTS.RECEIVABLES]: 'Customers who owe (credit)',
   [ACCOUNTS.LOANS]: 'Loans owed',
   [ACCOUNTS.CAPITAL]: 'Owner capital (cash put in)',
   [ACCOUNTS.CONTRIBUTED]: 'Stock brought in',
@@ -80,6 +90,7 @@ export const ACCOUNT_NAMES: Record<number, string> = {
   [ACCOUNTS.RETURNS]: 'Sales returns (voids)',
   [ACCOUNTS.COGS]: 'Cost of goods sold',
   [ACCOUNTS.EXPENSES]: 'Expenses paid',
+  [ACCOUNTS.BAD_DEBTS]: 'Bad debts written off',
   [ACCOUNTS.PURCHASE_VARIANCE]: 'Purchase variance',
   [ACCOUNTS.STOCK_ADJUST]: 'Stock adjustments',
 }
@@ -125,12 +136,15 @@ export function trialBalances(
   for (const m of cash) {
     switch (m.reason) {
       case 'sale':
-        add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.SALES, -m.delta)
-        break
       case 'void':
+        // The cash leg only. Revenue and returns are posted from the sale row
+        // below, so a credit sale and a cash sale use one revenue rule.
         add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.RETURNS, -m.delta)
+        break
+      case 'credit_payment':
+        // Collecting a debt: cash in, receivable down. Never revenue again.
+        add(ACCOUNTS.CASH, m.delta)
+        add(ACCOUNTS.RECEIVABLES, -m.delta)
         break
       case 'float':
         add(ACCOUNTS.CASH, m.delta)
@@ -155,6 +169,36 @@ export function trialBalances(
         add(ACCOUNTS.CASH, m.delta)
         add(ACCOUNTS.LOANS, -m.delta)
         break
+    }
+  }
+
+  // Credit payments collected so far, per sale. The sale row owns revenue and
+  // the receivable; the cash movement only moves cash against that receivable.
+  const collected = new Map<string, Cents>()
+  for (const m of cash) {
+    if (m.reason !== 'credit_payment' || !m.refId) continue
+    collected.set(m.refId, (collected.get(m.refId) ?? 0) + m.delta)
+  }
+
+  // Every sale bills its full total, whether it was paid in cash or on credit.
+  // A void adds a returns debit and reverses the asset side: cash for a cash
+  // sale (the void movement above), the receivable for a credit sale.
+  for (const sale of sales) {
+    add(ACCOUNTS.SALES, -sale.total)
+    if (sale.paymentMethod === 'credit') add(ACCOUNTS.RECEIVABLES, sale.total)
+    if (sale.status === 'voided') {
+      add(ACCOUNTS.RETURNS, sale.total)
+      if (sale.paymentMethod === 'credit') {
+        add(ACCOUNTS.RECEIVABLES, -(sale.total - (collected.get(sale.id) ?? 0)))
+      }
+    }
+    // A voided sale has no receivable and no bad debt. This can only happen if
+    // two offline tills write off and void the same sale before they sync; the
+    // void wins for the books so the write-off cannot double-count the loss.
+    const written = effectiveWriteOffAmount(sale, collected.get(sale.id) ?? 0)
+    if (written > 0) {
+      add(ACCOUNTS.BAD_DEBTS, written)
+      add(ACCOUNTS.RECEIVABLES, -written)
     }
   }
 
@@ -240,10 +284,16 @@ export function cashFlow(movements: CashMovement[], dates?: string[]): CashFlowS
     ? movements.filter((m) => dates.includes(m.businessDate))
     : movements
 
-  // Net cash from sales: a sale goes in, a refund (void) comes straight back
-  // out, so a refunded sale contributes nothing here.
+  // Net cash from selling: a cash sale goes in, a credit collection goes in
+  // when it is received, and a refund (void) comes straight back out. A credit
+  // sale with no deposit contributes nothing here, because no cash moved.
   const salesIn = window
-    .filter((m) => m.reason === 'sale' || m.reason === 'void')
+    .filter(
+      (m) =>
+        m.reason === 'sale' ||
+        m.reason === 'void' ||
+        m.reason === 'credit_payment',
+    )
     .reduce((s, m) => s + m.delta, 0)
   const operatingOut = -(
     window.filter((m) => m.reason === 'purchase' || m.reason === 'expense').reduce((s, m) => s + m.delta, 0) || 0
@@ -286,6 +336,8 @@ export interface IncomeStatement {
   /** Signed stock-take difference: positive = stock lost, negative = found. */
   stockAdjust: Cents
   expenses: Cents
+  /** Unpaid credit balances written off in the window. */
+  badDebts: Cents
   netProfit: Cents
   saleCount: number
   itemsSold: number
@@ -302,6 +354,7 @@ export function incomeStatement(
 ): IncomeStatement {
   const inWindow = dates?.length ? (d: string) => dates.includes(d) : () => true
   const byId = new Map(products.map((p) => [p.id, p]))
+  const collected = creditPaidMap(cash)
 
   const windowed = sales.filter((s) => inWindow(s.businessDate))
   const completed = windowed.filter((s) => s.status === 'completed')
@@ -309,9 +362,11 @@ export function incomeStatement(
   const used = lines.filter((l) => saleIds.has(l.saleId))
 
   // Gross revenue bills every sale, including the ones later refunded; the
-  // refunds line (from the cash void movements below) reverses them. That
-  // mirrors the postings — a sale and its void cancel on the trial balance —
-  // so a sale refunded in full nets to zero profit instead of a phantom loss.
+  // refunds line (from voided sale rows below) reverses them. That mirrors the
+  // postings — a sale and its void cancel on the trial balance — so a sale
+  // refunded in full nets to zero profit instead of a phantom loss. Deriving
+  // returns from the sale rows rather than cash means a voided credit sale
+  // reverses its full revenue even when only part of it was ever paid.
   // Cost of goods sold and the item count only look at completed sales, whose
   // stock actually left the shelf and came back with the void.
   const revenue = windowed.reduce((s, x) => s + x.total, 0)
@@ -319,14 +374,29 @@ export function incomeStatement(
     (s, l) => s + l.qty * costOf(byId, l.productId, l.unitPrice),
     0,
   )
-  const returns = -(
-    cash.filter((m) => m.reason === 'void' && inWindow(m.businessDate)).reduce((s, m) => s + m.delta, 0) || 0
-  )
+  const returns = windowed
+    .filter((s) => s.status === 'voided')
+    .reduce((s, x) => s + x.total, 0)
   const expenses = -(
     cash
       .filter((m) => m.reason === 'expense' && inWindow(m.businessDate))
       .reduce((s, m) => s + m.delta, 0) || 0
   )
+  // A write-off is an expense on the day it is posted, not the day of the sale.
+  // Later payments, including one synced from another till, reduce the loss.
+  const badDebts = sales
+    .filter((s) => {
+      const day = writeOffDate(s)
+      return (
+        effectiveWriteOffAmount(s, collected.get(s.id) ?? 0) > 0 &&
+        day !== null &&
+        inWindow(day)
+      )
+    })
+    .reduce(
+      (s, x) => s + effectiveWriteOffAmount(x, collected.get(x.id) ?? 0),
+      0,
+    )
 
   // Purchase variance: what each purchase payment booked minus what was paid.
   // Stock adjustments: signed shelf losses from stock takes.
@@ -354,7 +424,8 @@ export function incomeStatement(
   }
 
   const netRevenue = revenue - returns
-  const netProfit = netRevenue - cogs - expenses + purchaseVariance - stockAdjust
+  const netProfit =
+    netRevenue - cogs - expenses - badDebts + purchaseVariance - stockAdjust
 
   return {
     revenue,
@@ -365,6 +436,7 @@ export function incomeStatement(
     purchaseVariance,
     stockAdjust,
     expenses,
+    badDebts,
     netProfit,
     saleCount: completed.length,
     itemsSold: used.reduce((s, l) => s + l.qty, 0),
@@ -374,6 +446,8 @@ export function incomeStatement(
 export interface BalanceSheet {
   cash: Cents
   stockValue: Cents
+  /** Credit sales still owed by customers, after payments and write-offs. */
+  receivables: Cents
   totalAssets: Cents
   /** Outstanding loans: borrowed minus repaid. */
   loans: Cents
@@ -404,6 +478,7 @@ export function balanceSheet(
 
   const cashTotal = cash.reduce((s, m) => s + m.delta, 0)
   const stockValue = products.reduce((s, p) => s + p.stockQty * (p.cost ?? p.price), 0)
+  const receivables = outstandingReceivables(sales, cash)
 
   const loans = cash
     .filter((m) => (m.reason === 'cash_in' && m.kind === 'loan') || m.reason === 'loan_repay')
@@ -431,15 +506,25 @@ export function balanceSheet(
   return {
     cash: cashTotal,
     stockValue,
-    totalAssets: cashTotal + stockValue,
+    receivables,
+    totalAssets: cashTotal + stockValue + receivables,
     loans,
     capitalIn,
     contributedStock,
     retainedProfit: allTime.netProfit,
     drawings,
     totalEquity,
-    check: cashTotal + stockValue - (loans + totalEquity),
+    check: cashTotal + stockValue + receivables - (loans + totalEquity),
   }
+}
+
+/**
+ * Credit still owed by customers: every completed credit sale's total, less
+ * money received and less anything written off. Voided sales owe nothing.
+ * This is the same figure the trial balance carries on account 1300.
+ */
+export function outstandingReceivables(sales: Sale[], cash: CashMovement[]): Cents {
+  return outstandingCredit(sales, cash)
 }
 
 /** [start, end) milliseconds for a set of business dates, or null for all time. */

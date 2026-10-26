@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "npm run test:unit && npm run test:int && npm run test:sync",
-    "test:unit": "esbuild tools/smoke.ts --bundle --platform=node --format=esm --outfile=tools/.smoke.mjs --log-level=warning && node tools/.smoke.mjs",
+    "test:unit": "esbuild tools/smoke.ts --bundle --platform=node --format=esm --tsconfig=./tsconfig.app.json --outfile=tools/.smoke.mjs --log-level=warning && node tools/.smoke.mjs",
     "test:int": "esbuild tools/itest.ts --bundle --platform=node --format=cjs --tsconfig=./tsconfig.app.json --outfile=tools/.itest.cjs --log-level=warning && node tools/.itest.cjs",
     "test:sync": "esbuild tools/syncstub.ts --bundle --platform=node --format=cjs --tsconfig=./tsconfig.app.json --outfile=tools/.syncstub.cjs --log-level=warning && node tools/.syncstub.cjs",
     "icons": "node tools/make-icons.mjs",

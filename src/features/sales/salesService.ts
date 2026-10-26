@@ -35,6 +35,10 @@ export interface CommitInput {
   lines: CartLine[]
   paymentMethod: Sale['paymentMethod']
   amountTendered: Cents | null
+  /** Credit sale only: customer who owes the balance. */
+  customerName?: string
+  /** Credit sale only: cash handed over at the till. */
+  amountPaidNow?: Cents
   note?: string
   /** Staff name for the sale. Defaults to "Owner" for legacy callers. */
   cashierName?: string
@@ -47,18 +51,36 @@ export interface CommitInput {
  * transaction so the ledger can never end up with a sale that has no lines or a
  * stock change with no sale. Ad-hoc lines create a product first so stock and
  * reprints still work later.
+ *
+ * A credit sale bills the full total as revenue and leaves the customer owing
+ * it. Any cash handed over at the till is a `credit_payment` movement, so the
+ * drawer and the debt ledger agree from the first second.
  */
 export async function commitSale(input: CommitInput): Promise<Sale> {
   if (input.lines.length === 0) throw new Error('Cart is empty')
 
   const subtotal = cartSubtotal(input.lines)
-  if (input.paymentMethod === 'cash' && input.amountTendered !== null && input.amountTendered < subtotal) {
+  const isCredit = input.paymentMethod === 'credit'
+  const customerName = isCredit
+    ? (input.customerName ?? '').trim().replace(/\s+/g, ' ').slice(0, 60)
+    : ''
+  if (isCredit && !customerName) {
+    throw new Error('Enter the customer name for a credit sale.')
+  }
+
+  const paidNow = isCredit ? (input.amountPaidNow ?? 0) : 0
+  if (paidNow < 0) throw new Error('Paid now cannot be negative.')
+  if (paidNow > subtotal) {
+    throw new Error('Paid now cannot be more than the sale total.')
+  }
+
+  if (!isCredit && input.amountTendered !== null && input.amountTendered < subtotal) {
     // The UI blocks this; refuse here too so no path can record a short payment
     // as a fully paid sale.
     throw new Error(`Cash tendered is short by ${subtotal - input.amountTendered} tambala`)
   }
   const change =
-    input.paymentMethod === 'cash' && input.amountTendered !== null
+    !isCredit && input.amountTendered !== null
       ? Math.max(0, input.amountTendered - subtotal)
       : null
 
@@ -85,29 +107,43 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
         subtotal,
         total: subtotal,
         paymentMethod: input.paymentMethod,
-        amountTendered: input.paymentMethod === 'cash' ? input.amountTendered : null,
+        amountTendered: isCredit ? null : input.amountTendered,
         change,
         status: 'completed' as const,
         voidedAt: null,
         note: input.note ?? '',
         cashierName,
+        customerName: customerName || undefined,
       }) as Sale
 
       await db.sales.put(created)
       await queueEntity('sales', created.id, 'upsert', created)
 
       // Cash goes into the drawer. The tendered amount and the change cancel
-      // out, so the net gain is always the sale total.
-      if (input.paymentMethod === 'cash') {
+      // out, so the net gain is always the sale total. On a credit sale only
+      // the deposit goes in now; the rest is collected later.
+      if (!isCredit) {
         const cash = withSyncMeta(undefined, {
           reason: 'sale' as const,
           delta: created.total,
           refId: created.id,
           businessDate: date,
           note: `Sale #${receiptNo}`,
+          staffName: cashierName,
         }) as CashMovement
         await db.cashMovements.put(cash)
         await queueEntity('cash_movements', cash.id, 'upsert', cash)
+      } else if (paidNow > 0) {
+        const deposit = withSyncMeta(undefined, {
+          reason: 'credit_payment' as const,
+          delta: paidNow,
+          refId: created.id,
+          businessDate: date,
+          note: `Deposit · ${customerName} · #${receiptNo}`,
+          staffName: cashierName,
+        }) as CashMovement
+        await db.cashMovements.put(deposit)
+        await queueEntity('cash_movements', deposit.id, 'upsert', deposit)
       }
 
       for (const line of input.lines) {
@@ -185,6 +221,9 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
     async () => {
       const sale = await db.sales.get(saleId)
       if (!sale || sale.status === 'voided') return
+      if ((sale.writtenOffAmount ?? 0) > 0) {
+        throw new Error('A written-off debt cannot be voided. Record a correcting sale instead.')
+      }
 
       const lines = await db.saleLines.where('saleId').equals(saleId).toArray()
 
@@ -226,15 +265,28 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
       await db.sales.put(updated)
       await queueEntity('sales', saleId, 'upsert', updated)
 
-      // Hand the cash back. Recorded against the sale's own day so that day's
-      // net figure stays honest; the running drawer balance is unaffected.
+      // Hand the cash back. A cash sale returns the whole total; a credit sale
+      // returns only what the customer actually paid, because the unpaid part
+      // was never in the drawer. Recorded against the sale's own day so that
+      // day's net figure stays honest; the running drawer balance is unaffected.
+      let refund = 0
       if (sale.paymentMethod === 'cash') {
+        refund = sale.total
+      } else {
+        refund = (
+          await db.cashMovements.where('refId').equals(saleId).toArray()
+        )
+          .filter((m) => m.reason === 'credit_payment')
+          .reduce((sum, m) => sum + m.delta, 0)
+      }
+      if (refund > 0) {
         const cash = withSyncMeta(undefined, {
           reason: 'void' as const,
-          delta: -sale.total,
+          delta: -refund,
           refId: saleId,
           businessDate: sale.businessDate,
           note: `Void sale #${sale.receiptNo}${reason ? `: ${reason}` : ''}`,
+          staffName: sale.cashierName || undefined,
         }) as CashMovement
         await db.cashMovements.put(cash)
         await queueEntity('cash_movements', cash.id, 'upsert', cash)

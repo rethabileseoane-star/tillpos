@@ -156,7 +156,10 @@ export async function buyStock(items: PurchaseItem[], amountPaid: Cents, note = 
 
 export interface CashSummary {
   openingFloat: Cents
+  /** Cash taken at the till on cash sales. */
   sales: Cents
+  /** Cash collected against credit sales (deposits and later payments). */
+  creditPayments: Cents
   voids: Cents
   cashIn: Cents
   purchases: Cents
@@ -184,6 +187,7 @@ export function summariseCash(movements: CashMovement[], dates?: string[]): Cash
   return {
     openingFloat: of('float'),
     sales: of('sale'),
+    creditPayments: of('credit_payment'),
     voids: of('void'),
     cashIn: of('cash_in'),
     purchases: of('purchase'),
