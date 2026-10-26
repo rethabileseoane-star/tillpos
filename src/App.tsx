@@ -9,19 +9,24 @@ import {
   requestPersistentStorage,
 } from '@/features/install/install'
 import { useInstall } from '@/features/install/useInstall'
+import { useAppLock } from '@/features/security/LockContext'
 import { startSync } from '@/sync/scheduler'
 
 const NAV = [
   { to: '/', label: 'Sell', icon: 'M4 6h16M4 12h16M4 18h10' },
   { to: '/catalog', label: 'Catalog', icon: 'M3 7l9-4 9 4v10l-9 4-9-4V7z M3 7l9 4 9-4M12 11v10' },
-  { to: '/history', label: 'History', icon: 'M12 8v5l3 2M21 12a9 9 0 11-3-6.7' },
-  { to: '/money', label: 'Money', icon: 'M2 7h20v10H2z M2 10h20M6 14h4' },
-  { to: '/reports', label: 'Z-Report', icon: 'M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-3' },
-  { to: '/settings', label: 'More', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1A1.7 1.7 0 004.6 8a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V2a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z' },
+  { to: '/history', label: 'History', icon: 'M12 8v5l3 2M21 12a9 9 0 11-3-6.7', ownerOnly: true },
+  { to: '/money', label: 'Money', icon: 'M2 7h20v10H2z M2 10h20M6 14h4', ownerOnly: true },
+  { to: '/reports', label: 'Z-Report', icon: 'M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-3', ownerOnly: true },
+  { to: '/settings', label: 'More', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.7 1.7 0 008 19.4a1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H2a2 2 0 110-4h.1A1.7 1.7 0 004.6 8a1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V2a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H22a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z', ownerOnly: true },
 ]
 
 function TabBar() {
   const { count, subtotal } = useCart()
+  const { isOwner } = useAppLock()
+  // Cashiers get Sell and Catalog only. The route guard in main.tsx backs this
+  // up, so a deep link or an old back-stack entry cannot open an owner screen.
+  const items = NAV.filter((item) => isOwner || !item.ownerOnly)
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-700 bg-ink-800/95 backdrop-blur">
       {count > 0 && (
@@ -35,7 +40,7 @@ function TabBar() {
         </div>
       )}
       <div className="mx-auto flex max-w-lg px-2">
-        {NAV.map((item) => (
+        {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

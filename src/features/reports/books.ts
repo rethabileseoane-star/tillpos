@@ -95,6 +95,7 @@ export function salesJournal(data: BooksData, dates: string[]): BookTable {
         l.qty,
         fmt2(l.unitPrice),
         fmt2(l.lineTotal),
+        sale.cashierName ?? '',
       ])
       total += l.lineTotal
       count++
@@ -112,7 +113,7 @@ export function salesJournal(data: BooksData, dates: string[]): BookTable {
   return {
     title: 'Sales journal',
     subtitle: `Cash received and the items that paid for it · ${periodLabel(dates)}`,
-    columns: ['Date', 'Receipt', 'Time', 'Item', 'Qty', 'Unit (M)', 'Amount (M)'],
+    columns: ['Date', 'Receipt', 'Time', 'Item', 'Qty', 'Unit (M)', 'Amount (M)', 'Cashier'],
     rows,
     notes: [
       `Total of ${count} lines (M): ${fmt2(total)}`,

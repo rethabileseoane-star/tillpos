@@ -49,6 +49,15 @@ import {
 } from '../src/features/security/credentialService'
 import { verifySecret } from '../src/features/security/secret'
 import {
+  OWNER_ACCOUNT_ID,
+  addCashier,
+  changeStaffSecret,
+  createOwner,
+  loadStaff,
+  removeAllStaff,
+  removeCashier,
+} from '../src/features/security/staff'
+import {
   disableSync,
   loadCursors,
   loadLastSyncAt,
@@ -1294,6 +1303,103 @@ async function main() {
     await removeCredential()
     assert.equal(await loadCredential(), null, 'the lock was not removed')
     assert.equal(await loadBiometric(), null, 'biometrics outlived the lock')
+  })
+
+  await check('a legacy lock becomes the owner account without losing biometrics', async () => {
+    await reset()
+    const legacy = await saveCredential('password', 'owner-pass-123')
+    await saveBiometric({ credentialId: 'cred-1', userHandle: 'user-1' })
+
+    const staff = await loadStaff()
+    assert.equal(staff.length, 1, 'migration created more than one account')
+    const owner = staff[0]!
+    assert.equal(owner.id, OWNER_ACCOUNT_ID)
+    assert.equal(owner.role, 'owner')
+    assert.equal(owner.name, 'Owner')
+    assert.equal(await verifySecret(owner.credential, 'owner-pass-123'), true)
+    assert.equal((await loadCredential())?.hash, legacy.hash, 'the legacy lock changed')
+    assert.equal((await loadBiometric())?.credentialId, 'cred-1', 'migration dropped biometrics')
+    assert.equal(await db.outbox.count(), 0, 'the roster was queued for cloud sync')
+    assert.equal((await loadStaff()).length, 1, 'a second boot duplicated the owner')
+  })
+
+  await check('the owner is forced onto a password before a cashier can be added', async () => {
+    await reset()
+    await saveCredential('pin', '482913')
+    await assert.rejects(addCashier('Thabo', 'pin', '246813'), /owner password/i)
+
+    const owner = (await loadStaff()).find((a) => a.role === 'owner')!
+    await assert.rejects(
+      changeStaffSecret({
+        accountId: owner.id,
+        currentSecret: '482913',
+        kind: 'pin',
+        secret: '111111',
+      }),
+      /owner must use a password/i,
+    )
+
+    await changeStaffSecret({
+      accountId: owner.id,
+      currentSecret: '482913',
+      kind: 'password',
+      secret: 'owner-pass-123',
+    })
+    const upgraded = (await loadStaff()).find((a) => a.role === 'owner')!
+    assert.equal(upgraded.credential.kind, 'password')
+    assert.equal(await verifySecret(upgraded.credential, 'owner-pass-123'), true)
+    assert.equal(await verifySecret(upgraded.credential, '482913'), false)
+
+    const cashier = await addCashier('Thabo', 'pin', '246813')
+    assert.equal(cashier.role, 'cashier')
+    const roster = await loadStaff()
+    assert.equal(roster.length, 2)
+    assert.equal(roster[1]!.name, 'Thabo')
+    assert.equal(await db.outbox.count(), 0, 'a staff account was queued for cloud sync')
+    assert.ok(!JSON.stringify(await db.settings.toArray()).includes('246813'))
+  })
+
+  await check('the owner can reset a cashier and remove the last one', async () => {
+    await reset()
+    await createOwner('Owner', 'owner-pass-123')
+    const cashier = await addCashier('Thabo', 'pin', '246813')
+
+    await changeStaffSecret({ accountId: cashier.id, kind: 'pin', secret: '135724' })
+    const after = (await loadStaff()).find((a) => a.id === cashier.id)!
+    assert.equal(await verifySecret(after.credential, '135724'), true)
+    assert.equal(await verifySecret(after.credential, '246813'), false)
+
+    await assert.rejects(removeAllStaff('owner-pass-123'), /cashier/i)
+    await removeCashier(cashier.id)
+    assert.equal((await loadStaff()).length, 1)
+
+    await assert.rejects(removeAllStaff('wrong-password'), /incorrect/i)
+    await removeAllStaff('owner-pass-123')
+    assert.equal((await loadStaff()).length, 0)
+    assert.equal(await loadCredential(), null, 'the legacy lock outlived the roster')
+    assert.equal(await db.outbox.count(), 0)
+  })
+
+  await check('a sale records the cashier and the export names the cashier', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 1)],
+      paymentMethod: 'cash',
+      amountTendered: 200000,
+      cashierName: '  Thabo  ',
+    })
+    assert.equal(sale.cashierName, 'Thabo')
+
+    const csv = await (await exportSalesCsv([businessDate()])).text()
+    assert.match(csv, /^date,receipt_no,time,cashier,/m)
+    assert.match(csv, /,Thabo,/)
+
+    const data = await loadBooksData()
+    const tables = buildBookPack(data, [businessDate()])
+    const journal = tables.find((t) => t.title === 'Sales journal')!
+    assert.equal(journal.columns.at(-1), 'Cashier')
+    assert.equal(journal.rows.at(-1)?.at(-1), 'Thabo')
   })
 
   await check('the recovery backup carries records but no lock or sync secrets', async () => {

@@ -34,29 +34,37 @@ export interface BiometricRecord {
   createdAt: number
 }
 
+/** Validate a credential object that was nested inside another setting. */
+export function parseCredentialValue(value: unknown): StoredCredential | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<StoredCredential>
+  const validLength =
+    candidate.kind === 'pin'
+      ? typeof candidate.length === 'number' &&
+        candidate.length >= PIN_MIN &&
+        candidate.length <= PIN_MAX
+      : typeof candidate.length === 'number' &&
+        candidate.length >= PASSWORD_MIN &&
+        candidate.length <= PASSWORD_MAX
+  const valid =
+    candidate.v === 1 &&
+    (candidate.kind === 'pin' || candidate.kind === 'password') &&
+    validLength &&
+    candidate.algorithm === 'PBKDF2-SHA-256' &&
+    typeof candidate.iterations === 'number' &&
+    candidate.iterations >= 5_000 &&
+    candidate.iterations <= 2_000_000 &&
+    typeof candidate.salt === 'string' &&
+    candidate.salt.length > 0 &&
+    typeof candidate.hash === 'string' &&
+    candidate.hash.length > 0
+  return valid ? (candidate as StoredCredential) : null
+}
+
 function parseStoredCredential(raw: string | null): StoredCredential | null {
   if (!raw) return null
   try {
-    const value = JSON.parse(raw) as Partial<StoredCredential>
-    const validLength =
-      value.kind === 'pin'
-        ? typeof value.length === 'number' && value.length >= PIN_MIN && value.length <= PIN_MAX
-        : typeof value.length === 'number' &&
-          value.length >= PASSWORD_MIN &&
-          value.length <= PASSWORD_MAX
-    const valid =
-      value.v === 1 &&
-      (value.kind === 'pin' || value.kind === 'password') &&
-      validLength &&
-      value.algorithm === 'PBKDF2-SHA-256' &&
-      typeof value.iterations === 'number' &&
-      value.iterations >= 5_000 &&
-      value.iterations <= 2_000_000 &&
-      typeof value.salt === 'string' &&
-      value.salt.length > 0 &&
-      typeof value.hash === 'string' &&
-      value.hash.length > 0
-    return valid ? (value as StoredCredential) : null
+    return parseCredentialValue(JSON.parse(raw))
   } catch {
     return null
   }
@@ -92,9 +100,24 @@ export async function saveCredential(
   secret: string,
 ): Promise<StoredCredential> {
   const credential = await createCredential(kind, secret)
-  await setSetting(CREDENTIAL_KEY, JSON.stringify(credential))
+  await saveCredentialRecord(credential)
   await removeBiometric()
   return credential
+}
+
+/**
+ * Keep the legacy single-credential row in step with the owner account.
+ *
+ * The staff roster is the source of truth now, but an older build (or a
+ * rollback) still reads `security.credential`. Writing it here avoids asking
+ * the owner to set the lock again after a downgrade. Unlike `saveCredential`,
+ * this deliberately leaves the biometric enrolment alone: adding a cashier
+ * must not remove the owner's fingerprint.
+ */
+export async function saveCredentialRecord(
+  credential: StoredCredential,
+): Promise<void> {
+  await setSetting(CREDENTIAL_KEY, JSON.stringify(credential))
 }
 
 export async function removeCredential(): Promise<void> {

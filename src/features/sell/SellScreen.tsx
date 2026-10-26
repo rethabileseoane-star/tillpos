@@ -9,16 +9,24 @@ import { CheckoutSheet } from './CheckoutSheet'
 import { CartPanel } from './CartPanel'
 import { db } from '@/db'
 import { cashBalance } from '@/features/cash/cashService'
+import { useAppLock } from '@/features/security/LockContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 
 export function SellScreen() {
   const { lines, subtotal, count, addProduct, addAdHocLine, changeQty, remove, clear } = useCart()
+  const { isOwner } = useAppLock()
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [pendingCode, setPendingCode] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
   const products = useLiveQuery(() => db.products.toArray(), []) ?? []
-  // Live drawer figure: every sale and void moves this without a reload.
-  const cash = useLiveQuery(() => cashBalance(), []) ?? 0
+  // The drawer balance is owner-only. Do not even read it for a cashier: the
+  // figure should not appear in the UI, and there is no reason to wake the
+  // cash-movement table for them.
+  const cash =
+    useLiveQuery(
+      () => (isOwner ? cashBalance() : Promise.resolve(0)),
+      [isOwner],
+    ) ?? 0
 
   const onDetected = useCallback(
     async (code: string) => {
@@ -103,11 +111,13 @@ export function SellScreen() {
             (which shows the product name) on every successful scan. API details
             are still available in Settings. */}
 
-        {/* Cash in the drawer, always visible so the cashier sees it move. */}
-        <div className="absolute left-3 top-3 rounded-full bg-ink-900/70 px-3 py-1.5 text-xs backdrop-blur">
-          <span className="text-slate-400">Cash </span>
-          <span className="font-mono font-semibold text-cash-400">{formatMaluti(cash)}</span>
-        </div>
+        {/* The owner can see the drawer; a cashier cannot. */}
+        {isOwner && (
+          <div className="absolute left-3 top-3 rounded-full bg-ink-900/70 px-3 py-1.5 text-xs backdrop-blur">
+            <span className="text-slate-400">Cash </span>
+            <span className="font-mono font-semibold text-cash-400">{formatMaluti(cash)}</span>
+          </div>
+        )}
 
         {/* Scanner controls */}
         {scanning && (

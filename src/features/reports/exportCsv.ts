@@ -43,6 +43,7 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
         date: sale.businessDate,
         receipt_no: sale.receiptNo,
         time: new Date(sale.createdAt).toISOString().slice(11, 19),
+        cashier: sale.cashierName ?? '',
         barcode: l.barcode,
         item: l.name,
         qty: l.qty,
@@ -57,7 +58,7 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
     .filter(Boolean)
 
   const header = Object.keys(rows[0] ?? {
-    date: '', receipt_no: '', time: '', barcode: '', item: '',
+    date: '', receipt_no: '', time: '', cashier: '', barcode: '', item: '',
     qty: '', unit_price_mwk: '', unit_cost_mwk: '', line_total_mwk: '',
     cost_mwk: '', profit_mwk: '', payment_method: '',
   })

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useCart } from '@/features/cart/CartContext'
 import { formatMaluti, parseAmount, suggestTender, type Cents } from '@/domain/money'
 import { commitSale } from '@/features/sales/salesService'
+import { useAppLock } from '@/features/security/LockContext'
+import { saleCashierName } from '@/features/security/staff'
 import { feedbackSuccess } from '@/ui/feedback'
 import type { Sale } from '@/db/types'
 
@@ -22,6 +24,7 @@ type Stage = 'cash' | 'done'
  */
 export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
   const { lines } = useCart()
+  const { session } = useAppLock()
   const [stage, setStage] = useState<Stage>('cash')
   const [tendered, setTendered] = useState<string>('')
   const [sale, setSale] = useState<Sale | null>(null)
@@ -54,6 +57,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
         lines,
         paymentMethod: 'cash',
         amountTendered: amount,
+        cashierName: saleCashierName(session),
       })
       setSale(result)
       setStage('done')

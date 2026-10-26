@@ -4,23 +4,34 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
-import {
-  loadBiometric,
-  loadCredential,
-  type BiometricRecord,
-} from './credentialService'
+import { runSync } from '@/sync/scheduler'
+import { loadBiometric, type BiometricRecord } from './credentialService'
 import { LockScreen } from './LockScreen'
-import type { StoredCredential } from './secret'
+import {
+  loadStaff,
+  sessionFor,
+  staffSummaries,
+  type StaffAccount,
+  type StaffRole,
+  type StaffSession,
+  type StaffSummary,
+} from './staff'
 
 /**
  * The gate above every route.
  *
- * Boot reads the credential before rendering anything, so a deep link cannot
+ * Boot reads the staff roster before rendering anything, so a deep link cannot
  * flash the till for a frame. Unlocked state lives only in this component's
  * memory: persisting it to localStorage would make the launch lock pointless.
+ *
+ * A legacy device with an app lock but no roster is migrated automatically into
+ * an owner account. A device with no lock at all stays unlocked and is treated
+ * as the owner, which preserves the old single-user behaviour until the owner
+ * sets up staff.
  *
  * There is no idle or background timer by design. The owner chose "lock on
  * launch", and a PWA can stay alive for days, so Settings offers a manual
@@ -30,17 +41,41 @@ import type { StoredCredential } from './secret'
 type LockStatus = 'checking' | 'locked' | 'unlocked'
 
 interface AppLockValue {
-  credential: StoredCredential | null
   biometric: BiometricRecord | null
   status: LockStatus
+  accounts: StaffSummary[]
+  session: StaffSession | null
+  /** Owner when the till has no staff roster (legacy unlocked mode). */
+  role: StaffRole
+  isOwner: boolean
   /** Called only after a secret or biometric has been verified. */
-  unlock: () => void
+  unlock: (account: StaffAccount) => void
   lockNow: () => void
-  /** Re-read settings after the Security card changes them. */
+  /** Re-read settings after the Staff card changes them. */
   refresh: () => Promise<void>
 }
 
 const LockContext = createContext<AppLockValue | null>(null)
+
+/**
+ * Read both halves of the gate without letting a damaged biometric record hide
+ * a perfectly good staff roster. `loadBiometric` already treats a malformed
+ * value as "no biometrics"; this also covers a storage read that fails outright.
+ * A staff failure still propagates so boot can fall back to the safe open mode.
+ */
+async function readLockState(): Promise<{
+  staff: StaffAccount[]
+  bio: BiometricRecord | null
+}> {
+  const staff = await loadStaff()
+  let bio: BiometricRecord | null = null
+  try {
+    bio = await loadBiometric()
+  } catch {
+    bio = null
+  }
+  return { staff, bio }
+}
 
 export function useAppLock(): AppLockValue {
   const value = useContext(LockContext)
@@ -50,21 +85,20 @@ export function useAppLock(): AppLockValue {
 
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<LockStatus>('checking')
-  const [credential, setCredential] = useState<StoredCredential | null>(null)
+  const [accounts, setAccounts] = useState<StaffAccount[]>([])
+  const [session, setSession] = useState<StaffSession | null>(null)
   const [biometric, setBiometric] = useState<BiometricRecord | null>(null)
-
-  const read = useCallback(async () => {
-    const [cred, bio] = await Promise.all([loadCredential(), loadBiometric()])
-    setCredential(cred)
-    setBiometric(bio)
-    return cred
-  }, [])
+  const statusRef = useRef<LockStatus>('checking')
+  statusRef.current = status
 
   useEffect(() => {
     let alive = true
-    void read()
-      .then((cred) => {
-        if (alive) setStatus(cred ? 'locked' : 'unlocked')
+    void readLockState()
+      .then(({ staff, bio }) => {
+        if (!alive) return
+        setAccounts(staff)
+        setBiometric(bio)
+        setStatus(staff.length > 0 ? 'locked' : 'unlocked')
       })
       .catch(() => {
         // A storage failure must never brick the till. Opening is the safer
@@ -74,29 +108,75 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false
     }
-  }, [read])
+  }, [])
 
   const refresh = useCallback(async () => {
-    await read()
-  }, [read])
+    const { staff, bio } = await readLockState()
+    setAccounts(staff)
+    setBiometric(bio)
+    setStatus((current) => {
+      if (current === 'unlocked') return 'unlocked'
+      return staff.length > 0 ? 'locked' : 'unlocked'
+    })
+    setSession((current) => {
+      if (current) {
+        const match = staff.find((a) => a.id === current.id)
+        return match ? sessionFor(match) : null
+      }
+      // The Staff card only runs while the app is unlocked. After it creates
+      // the first owner, keep that owner signed in rather than dropping the
+      // screen they are working on. A locked boot does not come through here.
+      if (statusRef.current === 'unlocked') {
+        const owner = staff.find((a) => a.role === 'owner')
+        return owner ? sessionFor(owner) : null
+      }
+      return null
+    })
+  }, [])
 
-  const unlock = useCallback(() => setStatus('unlocked'), [])
+  const unlock = useCallback((account: StaffAccount) => {
+    setSession(sessionFor(account))
+    setStatus('unlocked')
+  }, [])
 
   const lockNow = useCallback(() => {
-    setStatus(credential ? 'locked' : 'unlocked')
-  }, [credential])
+    // Best-effort flush of queued sales before the shell unmounts. The sync
+    // engine reads IndexedDB directly, so it does not need the screen.
+    void runSync().catch(() => undefined)
+    setSession(null)
+    setStatus(accounts.length > 0 ? 'locked' : 'unlocked')
+  }, [accounts.length])
+
+  const summaries = useMemo(() => staffSummaries(accounts), [accounts])
+  const role: StaffRole =
+    session?.role ?? (accounts.length === 0 ? 'owner' : 'cashier')
+  const isOwner = role === 'owner'
 
   const value = useMemo<AppLockValue>(
-    () => ({ credential, biometric, status, unlock, lockNow, refresh }),
-    [credential, biometric, status, unlock, lockNow, refresh],
+    () => ({
+      biometric,
+      status,
+      accounts: summaries,
+      session,
+      role,
+      isOwner,
+      unlock,
+      lockNow,
+      refresh,
+    }),
+    [biometric, status, summaries, session, role, isOwner, unlock, lockNow, refresh],
   )
 
   return (
     <LockContext.Provider value={value}>
       {status === 'checking' ? (
         <BootSplash />
-      ) : status === 'locked' && credential ? (
-        <LockScreen credential={credential} biometric={biometric} onUnlock={unlock} />
+      ) : status === 'locked' && accounts.length > 0 ? (
+        <LockScreen
+          accounts={accounts}
+          biometric={biometric}
+          onUnlock={unlock}
+        />
       ) : (
         children
       )}
@@ -104,7 +184,7 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   )
 }
 
-/** Shown for the few milliseconds the credential read takes. */
+/** Shown for the few milliseconds the staff read takes. */
 function BootSplash() {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-ink-900">

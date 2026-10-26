@@ -97,6 +97,7 @@ export function HistoryScreen() {
                     })}
                     {' · '}
                     {sale.paymentMethod}
+                    {sale.cashierName ? ` · ${sale.cashierName}` : ''}
                   </p>
                 </div>
                 <p
@@ -152,6 +153,10 @@ function SaleDetail({ saleId, onVoided }: { saleId: string; onVoided: () => void
       </ul>
 
       <div className="mt-3 border-t border-ink-700 pt-2 text-sm">
+        <div className="flex justify-between text-slate-400">
+          <span>Cashier</span>
+          <span>{sale.cashierName || '—'}</span>
+        </div>
         <div className="flex justify-between">
           <span className="text-slate-400">Subtotal</span>
           <span className="font-mono">{formatMaluti(sale.subtotal)}</span>

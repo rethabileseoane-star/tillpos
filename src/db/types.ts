@@ -65,6 +65,11 @@ export interface Sale extends SyncMeta {
   status: 'completed' | 'voided'
   voidedAt: number | null
   note: string
+  /**
+   * Staff account that made the sale. Optional only because rows written before
+   * staff accounts existed have no name; every new sale gets one.
+   */
+  cashierName?: string
 }
 
 export interface SaleLine extends SyncMeta {

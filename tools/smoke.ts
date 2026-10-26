@@ -46,6 +46,7 @@ import {
   base64UrlToBytes,
   bytesToBase64,
   bytesToBase64Url,
+  attemptKey,
   clearAttempts,
   cooldownRemaining,
   createCredential,
@@ -666,6 +667,28 @@ check('a failure streak from over an hour ago resets', () => {
   const later = recordFailure(store, t0 + 60 * 60_000 + 1)
   assert.equal(later.fails, 1, 'an old streak escalated instead of resetting')
   assert.equal(cooldownRemaining(later, later.last), 0)
+})
+
+check('lockout streaks are separate per staff account', () => {
+  const store = fakeStore()
+  const t0 = 1_000_000
+  const cashier = attemptKey('cashier-1')
+  const owner = attemptKey('owner')
+  for (let i = 0; i < FREE_ATTEMPTS; i++) recordFailure(store, t0, cashier)
+
+  assert.ok(
+    cooldownRemaining(readAttempts(store, cashier), t0) > 0,
+    'the cashier did not earn a cooldown',
+  )
+  assert.equal(
+    cooldownRemaining(readAttempts(store, owner), t0),
+    0,
+    'a cashier locked the owner out',
+  )
+
+  clearAttempts(store, cashier)
+  assert.equal(readAttempts(store, cashier).fails, 0)
+  assert.equal(readAttempts(store).fails, 0, 'clearing one account touched the legacy key')
 })
 
 check('cooldownRemaining never reports a negative wait', () => {

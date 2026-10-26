@@ -173,9 +173,22 @@ type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
 const EMPTY_ATTEMPTS: AttemptState = { fails: 0, until: 0, last: 0 }
 
-export function readAttempts(store: KeyValueStore = localStorage): AttemptState {
+/**
+ * Attempt streaks are per staff account. The owner and each cashier therefore
+ * earn their own cooldown, and a cashier cannot lock the owner out by guessing
+ * on their own name. The legacy key is kept as the default so older test/admin
+ * paths still work.
+ */
+export function attemptKey(accountId: string): string {
+  return `${ATTEMPT_KEY}.${accountId}`
+}
+
+export function readAttempts(
+  store: KeyValueStore = localStorage,
+  key = ATTEMPT_KEY,
+): AttemptState {
   try {
-    const raw = store.getItem(ATTEMPT_KEY)
+    const raw = store.getItem(key)
     if (!raw) return { ...EMPTY_ATTEMPTS }
     const parsed = JSON.parse(raw) as Partial<AttemptState>
     return {
@@ -197,8 +210,9 @@ export function failureDelayMs(fails: number): number {
 export function recordFailure(
   store: KeyValueStore = localStorage,
   now = Date.now(),
+  key = ATTEMPT_KEY,
 ): AttemptState {
-  const previous = readAttempts(store)
+  const previous = readAttempts(store, key)
   const stale = now - previous.last > FORGET_AFTER_MS
   const fails = (stale ? 0 : previous.fails) + 1
   const delay = failureDelayMs(fails)
@@ -208,16 +222,19 @@ export function recordFailure(
     last: now,
   }
   try {
-    store.setItem(ATTEMPT_KEY, JSON.stringify(state))
+    store.setItem(key, JSON.stringify(state))
   } catch {
     // Private-mode quota failures must not stop the lock screen working.
   }
   return state
 }
 
-export function clearAttempts(store: KeyValueStore = localStorage): void {
+export function clearAttempts(
+  store: KeyValueStore = localStorage,
+  key = ATTEMPT_KEY,
+): void {
   try {
-    store.removeItem(ATTEMPT_KEY)
+    store.removeItem(key)
   } catch {
     // Ignore; a fresh attempt streak is not worth crashing over.
   }

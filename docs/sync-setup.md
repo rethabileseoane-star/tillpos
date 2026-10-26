@@ -1,18 +1,31 @@
 # Setting up multi-device sync
 
-This is the one-time setup that lets 3–6 phones share one till's data. Budget
-about fifteen minutes, plus five minutes per extra device.
+This is the one-time setup that lets 3–6 phones share one till's data and gives
+the owner and each cashier their own login. Budget about twenty minutes, plus
+five minutes per extra device and a minute per cashier.
 
 You need:
 
 - A free [Supabase](https://supabase.com) account.
-- An email address and password to use as the shop's login. Every device signs
-  in with the *same* details; this is not a per-person login.
+- An email address and password to use as the **shop's sync login**. Every
+  device signs in with the *same* details. This is the cloud connection, not a
+  person's till login.
 - The till that already holds the shop's history, so it can upload it.
+- An **owner password** for the app (at least 8 characters), and a name plus a
+  PIN or password for each cashier. These staff logins are local to each phone
+  and are separate from the shop sync login.
 
 > **Never change the Supabase project URL once the tills are in use.** If you
 > swap it, the devices stop seeing each other's data. The same rule as the
 > Netlify site: the address is part of where the data lives.
+
+There are two different logins, and mixing them up is the usual source of
+confusion:
+
+| Login | What it is for | Where it lives |
+|---|---|---|
+| **Shop sync login** | Lets the phones send sales and catalog changes to Supabase. One shared email and password for the shop. | **More → Cloud sync** |
+| **Staff login** | Lets a person open the till. The owner sees every section; a cashier sees Sell and Catalog only. | **More → Staff & app lock** |
 
 ---
 
@@ -75,7 +88,50 @@ On the device that already has the shop's history:
    other devices useful.
 7. Wait for "Last sync — just now" and "Waiting to send — nothing".
 
-## 6. Set up every other device
+## 6. Set up the owner and cashier accounts
+
+The shop sync login is only for the cloud. Staff accounts are local to each
+phone and are what people use to open the till. A cashier does not need an email
+address, and their PIN or password never leaves the phone.
+
+On the original till, open **More → Staff & app lock**.
+
+1. Tap **Set up owner account**. Use a password of at least 8 characters, not a
+   4-digit PIN. The owner can open Sell, Catalog, History, Money, Z-Report and
+   Settings.
+2. If this till already had an app lock, it is already the owner account. The
+   card shows it. If it is still a PIN, tap **Set password**, enter the current
+   PIN, then choose a password. The owner password is required before any
+   cashier can be added.
+3. Tap **Add cashier** for each person who sells on this phone. Give each a
+   distinct name (for example `Thabo`) and either a 4–8 digit PIN or a password.
+4. Hand the phone to that cashier, tap **Lock now**, and let them sign in under
+   their own name. The sales screen will then record their name on every sale.
+
+What a cashier can and cannot do:
+
+- **Can:** use Sell, including ad-hoc items with just a name and price; browse
+  Catalog read-only; sign in with their own name.
+- **Cannot:** open History, Money, Z-Report or Settings; see the drawer cash
+  balance; see cost or profit; add, edit, import, export or stock-adjust
+  catalog items; void or refund a sale; manage staff or sync.
+- If a cashier forgets their PIN, they see **Ask the owner**. The owner signs in
+  and uses **More → Staff & app lock → Reset** on that cashier. Past sales keep
+  the name. Removing and re-adding the account is not needed.
+- Biometric unlock is for the owner only. Cashiers always type their PIN or
+  password.
+- Voids and refunds are owner work. Do them from **History**.
+
+The roster and its password hashes never sync. Adding a cashier on one phone
+does not create the account on another phone. Add the owner to every phone, and
+add a cashier only to the phone that cashier carries.
+
+> Roles are a screen-level boundary. A cashier phone still holds the whole local
+> database. It stops a cashier using the shop-floor interface, not someone with
+> developer tools and the unlocked device. Treat a cashier phone as a shop
+> device.
+
+## 7. Set up every other device
 
 On each extra phone:
 
@@ -86,10 +142,18 @@ On each extra phone:
 3. Tap **Turn on sync**. It signs in and downloads the shop's history. Do **not**
    tap "Send all records" on these devices.
 4. Check **Catalog** and **History**: the products and past sales should appear.
+5. While still signed in as the owner, open **More → Staff & app lock**. Set up
+   the owner account, then add only the cashier who carries this phone.
+6. Tap **Lock now** and have that cashier sign in under their own name.
 
 The label matters: it goes in front of receipt numbers (`A-0001`, `B-0001`) so
 two tills selling at the same moment never print the same number. Give each
 device its own.
+
+Only the original history phone should ever press **Send all records**. Doing it
+again from a cashier phone would upload that phone's complete copy of the ledger
+a second time. The app protects against duplicate row ids, but it is still the
+wrong action and wastes a long sync.
 
 ---
 
@@ -98,6 +162,9 @@ device its own.
 - Tills keep selling with no network. Queued changes go up when they reconnect.
 - A sale made on one till appears on the others within about twenty seconds
   while they are open and online.
+- **Every sale carries the cashier's name.** The owner sees it in History, in
+  the sales CSV and in the books sales journal PDF. Check it when a cashier
+  starts on a new phone.
 - **Sync before closing the day.** A Z-report only counts what has reached that
   device, so if the other till has not synced yet its sales are not in the
   report yet.
@@ -105,7 +172,10 @@ device its own.
   is shop-wide, not per till. Selling more than you have is allowed, as before;
   the balance simply goes negative and you correct it with a stock adjustment.
 - **Cash is one drawer.** Every device's payments feed the same drawer figures.
-  Do not treat each phone as a separate tin.
+  Cashiers do not see the drawer balance; the owner does.
+- **Use Lock now at a handover.** The till also locks whenever the app is
+  launched or reloaded. Cashiers never reach Settings, so the owner should lock
+  before passing the phone back.
 
 ## If something looks wrong
 
@@ -117,9 +187,14 @@ device its own.
 | An error mentioning `row-level security` | You are signed out. Sign in again. |
 | Another till's sales never arrive | Confirm both devices show the *same* project URL and the same email. |
 | A product edit on one till is ignored | The other till made a newer edit — the newest edit wins. |
+| "Set the owner password before adding a cashier" | The owner account still uses the old PIN. Open **More → Staff & app lock → Set password**, then add the cashier. |
+| A cashier sees History or Settings | They are signed in as the owner. Tap **Lock now** and have them choose their own name on the lock screen. |
+| A cashier forgot their PIN | The owner signs in and taps **Reset** next to that cashier in **More → Staff & app lock**. |
+| A cashier cannot see a cashier account | Staff accounts are per phone. Add that cashier on the phone they carry. |
 
 Diagnostics: **More → Device → This device id** shows the first eight characters
-of the device's id, which is stamped on every row it creates.
+of the device's id, which is stamped on every row it creates. Staff names are
+local labels only; they are not cloud users.
 
 ## Free plan notes
 
@@ -137,7 +212,14 @@ of the device's id, which is stamped on every row it creates.
 - The **service_role key** must never be put in the app.
 - The **shop session** is stored on each phone under a `till.` key and is wiped
   by the app's "erase this device" recovery action.
-- The **app lock PIN** is per device and never synced. Setting a PIN on one till
-  does not lock the others.
-- A **JSON backup** from the lock screen's "Forgot PIN?" sheet deliberately
-  excludes the lock, the session and the sync cursor.
+- **Owner and cashier secrets** are stored as PBKDF2 hashes under
+  `security.staff` on each phone. They are never synced, never queued to the
+  cloud, and never included in a JSON backup. Setting a cashier PIN on one till
+  does not create that cashier on another.
+- The owner's hash is also kept in the older `security.credential` row so a
+  rollback to the previous build still opens with the same password.
+- Biometric enrolment is owner-only and per device. Changing the owner password
+  removes it, so add the fingerprint or face again afterwards.
+- A **JSON backup** from the owner's "Forgot password?" sheet deliberately
+  excludes the staff roster, the biometric enrolment, the session and the sync
+  cursor.

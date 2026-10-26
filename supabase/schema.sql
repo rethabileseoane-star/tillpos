@@ -18,12 +18,13 @@
 
 create sequence if not exists till_seq;
 
-create or replace function till_touch()
+create or replace function public.till_touch()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
-  new."serverSeq" := nextval('till_seq');
+  new."serverSeq" := nextval('public.till_seq');
   new."serverUpdatedAt" := now();
   return new;
 end;
@@ -66,6 +67,7 @@ create table if not exists sales (
   status          text not null default 'completed',
   "voidedAt"      bigint,
   note            text not null default '',
+  "cashierName"   text not null default '',
   "createdAt"     bigint not null,
   "updatedAt"     bigint not null,
   "deletedAt"     bigint,
@@ -148,6 +150,16 @@ create table if not exists settings (
 );
 
 -- ---------------------------------------------------------------------------
+-- Additive upgrades
+-- ---------------------------------------------------------------------------
+--
+-- Projects created before the cashier feature already have `sales`, so the
+-- `create table if not exists` above will not add this column. Keep it here so
+-- re-running the file upgrades an existing shop without losing its history.
+
+alter table sales add column if not exists "cashierName" text not null default '';
+
+-- ---------------------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------------------
 --
@@ -179,27 +191,27 @@ create index if not exists settings_seq_idx on settings ("serverSeq");
 
 drop trigger if exists products_touch on products;
 create trigger products_touch before insert or update on products
-  for each row execute function till_touch();
+  for each row execute function public.till_touch();
 
 drop trigger if exists sales_touch on sales;
 create trigger sales_touch before insert or update on sales
-  for each row execute function till_touch();
+  for each row execute function public.till_touch();
 
 drop trigger if exists sale_lines_touch on sale_lines;
 create trigger sale_lines_touch before insert or update on sale_lines
-  for each row execute function till_touch();
+  for each row execute function public.till_touch();
 
 drop trigger if exists stock_movements_touch on stock_movements;
 create trigger stock_movements_touch before insert or update on stock_movements
-  for each row execute function till_touch();
+  for each row execute function public.till_touch();
 
 drop trigger if exists cash_movements_touch on cash_movements;
 create trigger cash_movements_touch before insert or update on cash_movements
-  for each row execute function till_touch();
+  for each row execute function public.till_touch();
 
 drop trigger if exists settings_touch on settings;
 create trigger settings_touch before insert or update on settings
-  for each row execute function till_touch();
+  for each row execute function public.till_touch();
 
 -- ---------------------------------------------------------------------------
 -- Row level security

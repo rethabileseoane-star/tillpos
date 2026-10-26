@@ -36,6 +36,8 @@ export interface CommitInput {
   paymentMethod: Sale['paymentMethod']
   amountTendered: Cents | null
   note?: string
+  /** Staff name for the sale. Defaults to "Owner" for legacy callers. */
+  cashierName?: string
 }
 
 /**
@@ -65,6 +67,9 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
   // Dexie transaction refuses any table it was not told about.
   const deviceId = getDeviceId()
   const tillLabel = await loadTillLabel()
+  // Every new sale is attributed. Older callers (and the integration tests)
+  // omit the field; they are the owner's sale by definition.
+  const cashierName = input.cashierName?.trim().slice(0, 60) || 'Owner'
 
   // The whole sale, including its receipt number, is produced inside the
   // transaction. Allocating the number beforehand let two commits racing read
@@ -85,6 +90,7 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
         status: 'completed' as const,
         voidedAt: null,
         note: input.note ?? '',
+        cashierName,
       }) as Sale
 
       await db.sales.put(created)

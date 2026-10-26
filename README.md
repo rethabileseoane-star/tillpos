@@ -118,29 +118,44 @@ Prices are in Maluti. `1500` means M1500.00.
 Rows that cannot be imported are listed with their row number and the reason,
 so a bad file does not silently import half a catalog.
 
-## Locking the till
+## Owner and cashier accounts
 
-Settings → App lock adds a launch gate. Choose a 4–8 digit PIN or a password of
-at least 8 characters; only a salted PBKDF2-SHA-256 digest is stored, never the
-secret. Fingerprint, face or Windows Hello can be added afterwards.
+Settings → Staff & app lock adds a launch gate and separates the owner from the
+cashiers. Staff accounts are local to the phone; they are not Supabase users.
+The only cloud account is the shared shop login used for sync.
 
+- The **owner** sees every section: Sell, Catalog, History, Money, Z-Report and
+  Settings. The owner must use a password of at least 8 characters, not a
+  4-digit PIN. If an existing lock uses a PIN, the Staff card asks the owner to
+  replace it before a cashier can be added.
+- A **cashier** sees Sell and Catalog only. They can sell, including ad-hoc items
+  with just a name and price, and browse the catalog read-only. Cost, profit,
+  drawer cash, stock adjustment, import/export, History, Money, Z-Report and
+  Settings are hidden. Voids and refunds stay with the owner.
+- Each person gets their own name on the lock screen and their own 4–8 digit PIN
+  or password. Every completed sale is stamped with that name, shown in History
+  and carried in the sales CSV and books sales journal.
+- Only a salted PBKDF2-SHA-256 digest is stored, never the secret. The roster
+  and its hashes never sync and never enter a JSON backup.
 - The lock is asked for each time the app is opened or reloaded. It does **not**
   re-lock after an idle period, because a PWA can stay in memory for days — use
   **Lock now** in Settings before leaving the counter.
-- Biometrics need HTTPS and a hostname; WebAuthn refuses numeric IP addresses,
-  so on `https://192.168.x.x` the PIN/password is the only option. The secret is
-  always kept as the fallback, so resetting the device's authenticator cannot
-  lock you out.
-- Five wrong tries start a 30-second cooldown; ten start five minutes. The
-  count survives a reload.
-- Forgot it? The lock screen offers a JSON backup of every table plus the
-  catalog CSV, then a typed-confirmation erase. There is no recovery code and no
-  server to ask. Erasing clears this device only; the cloud copy, if sync is on,
-  is untouched.
+- Biometrics are owner-only. They need HTTPS and a hostname; WebAuthn refuses
+  numeric IP addresses, so on `https://192.168.x.x` the password is the only
+  owner option. The password is always kept as the fallback, so resetting the
+  device's authenticator cannot lock the owner out.
+- Five wrong tries on one account start a 30-second cooldown; ten start five
+  minutes. The count is per account and survives a reload, so a cashier cannot
+  lock the owner out.
+- A cashier who forgets their PIN is told to ask the owner. The owner signs in
+  and resets that account from the Staff card. If the owner forgets the owner
+  password, the lock screen still offers the destructive recovery sheet: a JSON
+  backup of every table plus the catalog CSV, then a typed-confirmation erase.
+  There is no recovery code and no server to ask.
 
-This is a screen gate, not encryption. Anyone with the device and developer
-tools can read or clear the site data; the lock is there to stop a customer or a
-cashier at the counter, not a forensic attacker.
+Roles are a screen boundary, not encryption. A cashier phone still holds the
+whole local database, so anyone with the device and developer tools can read or
+clear the site data. Treat a cashier phone as a shop device.
 
 ## How the numbers work
 
@@ -190,7 +205,8 @@ How it behaves with sync on:
   counting the same day would otherwise print the same number. A device with no
   label keeps the old plain numbering.
 - **Shop-wide values sync; device secrets do not.** The shop name travels. The
-  app lock, this device's session and its cursor never leave the phone.
+  owner and cashier roster, their password hashes, this device's session and its
+  cursor never leave the phone.
 
 Every row carries `id`, `createdAt`, `updatedAt`, `deletedAt`, `rev`,
 `deviceId`, plus a server-assigned `serverSeq` on the cloud copy, which is what
@@ -211,7 +227,7 @@ src/
     history/    per-day sales with void
     reports/    Z-report and CSV export
     settings/   device info, storage, cloud sync, receipt label
-    security/   app lock, WebAuthn, recovery backup
+    security/   staff roster, app lock, WebAuthn, recovery backup
   sync/         outbox, merge rules, Supabase client, sync engine/scheduler
   ui/           scan feedback
 docs/           multi-device sync setup guide
@@ -225,10 +241,15 @@ tools/          icon generator, logic smoke tests, CSV template
   was taken in cash and nothing was paid in or out.
 - Day boundaries use the device clock and local calendar.
 - No tax or discounts.
-- The app lock guards the screen, not the database: records are not encrypted
-  at rest, and clearing the browser's site data removes both the lock and the
-  ledger.
-- The lock runs on launch only; it does not re-lock after an idle period.
+- Staff roles guard the screen, not the database: records are not encrypted at
+  rest, a cashier phone still holds the whole local database, and clearing the
+  browser's site data removes the roster and the ledger.
+- The lock runs on launch only; it does not re-lock after an idle period. Use
+  **Lock now** at a counter handover.
+- Cashier accounts are per phone. Adding a cashier on the owner's phone does not
+  create the account on the phone that cashier carries.
+- Voids and refunds are owner-only by interface; a cashier with developer tools
+  is outside the boundary described here.
 - A Z-report counts what has reached that device. Sync before closing, or the
   report is missing the other tills' sales.
 - Conflict resolution compares the writing device's clock. A phone with badly
