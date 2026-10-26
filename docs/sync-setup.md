@@ -220,7 +220,9 @@ is still the wrong action and wastes a long sync.
 
 ## 8. Add a second shop on the same phone
 
-1. While signed in as the owner of shop A, open **More → Shops**.
+1. While signed in as the owner of shop A, open **More → Shops**. If shop A still
+   uses an old 4-digit PIN, first set the owner password in **Staff & app lock**:
+   a new shop copies the owner's password, not a PIN.
 2. Tap **Add another shop**.
 3. Give it a **shop name** and a permanent **shop code** (for example `shop-b`).
    Lowercase letters, numbers and hyphens only. The suggested code is already

@@ -166,7 +166,8 @@ erases its history. A new shop gets its own `till-pos-<shop-code>` database.
 
 - Add a shop in **Settings → Shops**, then open it. The new shop starts with the
   current owner account (same password) and an empty catalog. No products, sales,
-  cash, settings or cashiers are copied.
+  cash, settings or cashiers are copied. Set the owner password first if shop A
+  still uses a legacy PIN: a shop copies the password, not the PIN.
 - Switch shops from **Settings → Shops** or the lock screen link **Shop: … ·
   Change**. The app reloads so the database, staff roster, lock state, sync
   login, cursors and settings all come from the selected shop.
@@ -176,8 +177,8 @@ erases its history. A new shop gets its own `till-pos-<shop-code>` database.
 - Both shops can use one Supabase project. Every cloud row carries a `shopId`,
   and RLS only exposes rows matching the signed-in login's shop claim. The app
   checks the claim as well, so a login for one shop is refused in another.
-- Staff are per shop and per phone. Add the owner and that phone's cashiers
-  separately in each shop.
+- Staff are per shop and per phone. Adding a shop copies only the owner; add
+  that phone's cashiers separately in each shop.
 - The owner password is copied when a shop is added, not stored in plain text.
   Changing it later in one shop does not change the other shops' passwords.
 - A JSON backup covers the active shop. **Erase this device** deletes every
