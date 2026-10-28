@@ -309,8 +309,10 @@ local database.
 - Tills keep selling with no network. Queued changes go up when they reconnect.
 - A sale made on one till appears on that shop's other tills within about twenty
   seconds while they are open and online.
-- **Every sale carries the cashier's name.** The owner sees it in History, in
-  the sales CSV and in the books sales journal PDF.
+- **Every sale and credit action carries the staff name.** The owner sees it in
+  History, can filter History by cashier, and gets it in the sales CSV and books
+  sales journal PDF. A credit sale's detail lists every payment and who received
+  it; the credit book shows who last took a payment.
 - **Shop data never crosses shops.** Catalog, sales, cash, staff, lock, settings,
   sync login and sync cursor are per shop. A change in shop B is invisible to
   shop A, even on the same phone.

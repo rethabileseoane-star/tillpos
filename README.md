@@ -138,7 +138,9 @@ The only cloud accounts are the per-shop sync logins.
   import/export and voids stay with the owner.
 - Each person gets their own name on the lock screen and their own 4–8 digit PIN
   or password. Every completed sale is stamped with that name, shown in History
-  and carried in the sales CSV and books sales journal.
+  and carried in the sales CSV and books sales journal. Owner History can be
+  filtered by cashier; a credit sale's detail lists every payment and who
+  received it, and the credit book shows who last took a payment.
 - Only a salted PBKDF2-SHA-256 digest is stored, never the secret. The roster
   and its hashes never sync and never enter a JSON backup.
 - The lock is asked for each time the app is opened or reloaded. It does **not**

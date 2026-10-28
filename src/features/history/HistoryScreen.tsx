@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db'
+import type { CashMovement } from '@/db/types'
 import { formatMaluti, parseAmount } from '@/domain/money'
 import { businessDate, voidSale } from '@/features/sales/salesService'
 import { exportSalesCsv } from '@/features/reports/exportCsv'
@@ -30,10 +31,13 @@ import {
  * The credit book is operational (who owes what) rather than a revenue report,
  * so it shows balances to both roles while the day view stays money-free.
  */
+const UNASSIGNED = 'Unassigned'
+
 export function HistoryScreen() {
-  const { isOwner } = useAppLock()
+  const { isOwner, accounts } = useAppLock()
   const today = businessDate()
   const [date, setDate] = useState(today)
+  const [cashierFilter, setCashierFilter] = useState('all')
   const [openSaleId, setOpenSaleId] = useState<string | null>(null)
   const [creditOpen, setCreditOpen] = useState(false)
   const [payRow, setPayRow] = useState<CreditRow | null>(null)
@@ -60,8 +64,37 @@ export function HistoryScreen() {
     [allSales, creditPayments],
   )
   const owed = book.reduce((sum, row) => sum + row.balance, 0)
+  const lastPaymentBySale = useMemo(() => {
+    const map = new Map<string, CashMovement>()
+    for (const movement of creditPayments) {
+      if (!movement.refId) continue
+      const current = map.get(movement.refId)
+      if (!current || movement.createdAt > current.createdAt) {
+        map.set(movement.refId, movement)
+      }
+    }
+    return map
+  }, [creditPayments])
 
-  const totals = sales.reduce(
+  // The owner can narrow the day to one person's transactions. Names come from
+  // the staff roster as well as the day's rows, so a cashier with no sales still
+  // appears and an old/removed name can still be found in history.
+  const staffNames = useMemo(() => {
+    if (!isOwner) return []
+    const names = new Set<string>()
+    for (const account of accounts) names.add(account.name)
+    for (const sale of sales) names.add(sale.cashierName?.trim() || UNASSIGNED)
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [accounts, isOwner, sales])
+  const activeFilter = staffNames.includes(cashierFilter) ? cashierFilter : 'all'
+  const shownSales = useMemo(() => {
+    if (activeFilter === 'all') return sales
+    return sales.filter(
+      (sale) => (sale.cashierName?.trim() || UNASSIGNED) === activeFilter,
+    )
+  }, [activeFilter, sales])
+
+  const totals = shownSales.reduce(
     (acc, s) => {
       if (s.status === 'completed') {
         acc.count++
@@ -82,7 +115,9 @@ export function HistoryScreen() {
         <div>
           <h1 className="text-xl font-bold">Sales</h1>
           <p className="text-[11px] text-slate-500">
-            {isOwner ? 'Every sale and the credit book' : "Today's sales · amounts hidden"}
+            {isOwner
+              ? 'Every sale by cashier, and the credit book'
+              : "Today's sales · amounts hidden"}
           </p>
         </div>
         {isOwner && (
@@ -96,13 +131,35 @@ export function HistoryScreen() {
       </div>
 
       {isOwner ? (
-        <input
-          type="date"
-          value={date}
-          max={today}
-          onChange={(e) => setDate(e.target.value || today)}
-          className="field mt-3 font-mono"
-        />
+        <>
+          <input
+            type="date"
+            value={date}
+            max={today}
+            onChange={(e) => setDate(e.target.value || today)}
+            className="field mt-3 font-mono"
+          />
+          <label className="mt-2 block">
+            <span className="text-[10px] uppercase tracking-wider text-slate-400">
+              Cashier
+            </span>
+            <select
+              value={activeFilter}
+              onChange={(e) => {
+                setCashierFilter(e.target.value)
+                setOpenSaleId(null)
+              }}
+              className="field mt-1 font-mono"
+            >
+              <option value="all">All staff</option>
+              {staffNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
       ) : (
         <div className="mt-3 rounded-xl border border-ink-700 bg-ink-800/70 px-3 py-2 font-mono text-sm text-slate-300">
           Today · {today}
@@ -162,7 +219,7 @@ export function HistoryScreen() {
       </button>
 
       <ul className="mt-3 space-y-2">
-        {sales.map((sale) => {
+        {shownSales.map((sale) => {
           const credit = sale.paymentMethod === 'credit'
           const balance = creditBalance(sale, paidMap)
           const writtenOff = (sale.writtenOffAmount ?? 0) > 0
@@ -195,7 +252,10 @@ export function HistoryScreen() {
                       })}
                       {' · '}
                       {credit ? 'Credit' : 'Cash'}
-                      {sale.cashierName ? ` · ${sale.cashierName}` : ''}
+                      {' · '}
+                      {sale.cashierName?.trim()
+                        ? `Cashier: ${sale.cashierName.trim()}`
+                        : 'Cashier: Unassigned'}
                       {credit && sale.customerName ? ` · ${sale.customerName}` : ''}
                     </p>
                     {isOwner && credit && balance > 0 && (
@@ -230,9 +290,11 @@ export function HistoryScreen() {
             </li>
           )
         })}
-        {sales.length === 0 && (
+        {shownSales.length === 0 && (
           <li className="py-8 text-center text-sm text-slate-500">
-            No sales on {date}
+            {isOwner && activeFilter !== 'all'
+              ? `No sales by ${activeFilter} on ${date}`
+              : `No sales on ${date}`}
           </li>
         )}
       </ul>
@@ -240,6 +302,7 @@ export function HistoryScreen() {
       {creditOpen && (
         <CreditBookSheet
           rows={book}
+          lastPayments={lastPaymentBySale}
           isOwner={isOwner}
           owed={owed}
           onClose={() => setCreditOpen(false)}
@@ -315,7 +378,7 @@ function SaleDetail({
       <div className="mt-3 border-t border-ink-700 pt-2 text-sm">
         <div className="flex justify-between text-slate-400">
           <span>Cashier</span>
-          <span>{sale.cashierName || '—'}</span>
+          <span>{sale.cashierName?.trim() || 'Unassigned'}</span>
         </div>
         <div className="flex justify-between text-slate-400">
           <span>Payment</span>
@@ -371,6 +434,31 @@ function SaleDetail({
           </>
         )}
 
+        {isOwner && payments.length > 0 && (
+          <div className="mt-2 rounded-lg border border-ink-700 bg-ink-900/50 p-2">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">
+              Credit payments received
+            </p>
+            <ul className="mt-1 space-y-1">
+              {[...payments]
+                .sort((a, b) => a.createdAt - b.createdAt)
+                .map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex items-baseline justify-between gap-2 text-[11px]"
+                  >
+                    <span className="min-w-0 truncate text-slate-400">
+                      {m.businessDate} · {m.staffName?.trim() || 'Not recorded'}
+                    </span>
+                    <span className="shrink-0 font-mono text-slate-300">
+                      {formatMaluti(m.delta)}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
+
         {!isOwner && credit && (
           <div className="mt-1 flex justify-between font-semibold">
             <span>Credit status</span>
@@ -386,7 +474,7 @@ function SaleDetail({
                 : 'Written off · recovered in full'
               : 'Written off'}
             {sale.writeOffReason ? ` · ${sale.writeOffReason}` : ''}
-            {sale.writtenOffBy ? ` · ${sale.writtenOffBy}` : ''}
+            {sale.writtenOffBy ? ` · by ${sale.writtenOffBy}` : ''}
           </p>
         )}
       </div>
@@ -433,6 +521,7 @@ function SaleDetail({
 
 function CreditBookSheet({
   rows,
+  lastPayments,
   isOwner,
   owed,
   onClose,
@@ -440,6 +529,7 @@ function CreditBookSheet({
   onWriteOff,
 }: {
   rows: CreditRow[]
+  lastPayments: Map<string, CashMovement>
   isOwner: boolean
   owed: number
   onClose: () => void
@@ -466,41 +556,50 @@ function CreditBookSheet({
         </div>
 
         <ul className="mt-3 space-y-2">
-          {rows.map((row) => (
-            <li key={row.sale.id} className="card !py-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">
-                    {row.sale.customerName || 'Customer'}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    #{row.sale.receiptNo} · {row.sale.businessDate} ·{' '}
-                    {CREDIT_STATE_LABEL[row.state]}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    {row.sale.cashierName || '—'}
+          {rows.map((row) => {
+            const lastPayment = lastPayments.get(row.sale.id)
+            return (
+              <li key={row.sale.id} className="card !py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">
+                      {row.sale.customerName || 'Customer'}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      #{row.sale.receiptNo} · {row.sale.businessDate} ·{' '}
+                      {CREDIT_STATE_LABEL[row.state]}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Sold by {row.sale.cashierName?.trim() || 'Unassigned'}
+                    </p>
+                    {isOwner && lastPayment && (
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Last payment {lastPayment.businessDate} ·{' '}
+                        {lastPayment.staffName?.trim() || 'Not recorded'}
+                      </p>
+                    )}
+                  </div>
+                  <p className="shrink-0 font-mono text-lg font-semibold text-amber-300">
+                    {formatMaluti(row.balance)}
                   </p>
                 </div>
-                <p className="shrink-0 font-mono text-lg font-semibold text-amber-300">
-                  {formatMaluti(row.balance)}
-                </p>
-              </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  className="btn-primary flex-1 !py-2 text-xs"
-                  onClick={() => onPay(row)}
-                >
-                  Payment
-                </button>
-                <button
-                  className="btn-ghost flex-1 !py-2 text-xs"
-                  onClick={() => onWriteOff(row)}
-                >
-                  Write off
-                </button>
-              </div>
-            </li>
-          ))}
+                <div className="mt-2 flex gap-2">
+                  <button
+                    className="btn-primary flex-1 !py-2 text-xs"
+                    onClick={() => onPay(row)}
+                  >
+                    Payment
+                  </button>
+                  <button
+                    className="btn-ghost flex-1 !py-2 text-xs"
+                    onClick={() => onWriteOff(row)}
+                  >
+                    Write off
+                  </button>
+                </div>
+              </li>
+            )
+          })}
           {rows.length === 0 && (
             <li className="py-8 text-center text-sm text-slate-500">
               No customer owes anything.
