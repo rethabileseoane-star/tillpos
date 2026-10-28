@@ -371,8 +371,8 @@ export interface IncomeStatement {
   cogs: Cents
   grossProfit: Cents
   /**
-   * Purchase price differences in the window. Positive when you paid more than
-   * you booked (a loss), negative when you paid less (a bargain).
+   * Purchase price differences in the window. Positive when you paid less than
+   * the stock was booked at (a bargain), negative when you paid more (a loss).
    */
   purchaseVariance: Cents
   /** Signed stock-take difference: positive = stock lost, negative = found. */
