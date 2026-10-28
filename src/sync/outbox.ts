@@ -27,7 +27,9 @@ export async function queueEntity(
     await db.outbox.update(existing.id!, {
       payload: JSON.stringify(payload),
       op,
-      createdAt: Date.now(),
+      // Keep the original queue position. A parent row (a product, a sale) must
+      // still reach the cloud before its children even when it is edited again.
+      createdAt: existing.createdAt,
     })
     notifyLocalWrite()
     return

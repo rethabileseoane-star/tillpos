@@ -1,5 +1,6 @@
 import Papa from 'papaparse'
 import { db } from '@/db'
+import { localDate, localTime } from '@/domain/time'
 import {
   CASH_REASON_LABEL,
   STOCK_REASON_LABEL,
@@ -40,7 +41,7 @@ export async function exportCashLedgerCsv(dates?: string[]): Promise<Blob> {
     if (dates?.length && !dates.includes(m.businessDate)) continue
     rows.push({
       date: m.businessDate,
-      time: new Date(m.createdAt).toISOString().slice(11, 19),
+      time: localTime(m.createdAt),
       type: CASH_REASON_LABEL[m.reason],
       note: m.note,
       amount_mwk: (m.delta / 100).toFixed(2),
@@ -81,7 +82,7 @@ export async function exportStockLedgerCsv(start?: number, end?: number): Promis
     const p = byId.get(m.productId)
     const cost = p ? (p.cost ?? p.price) : 0
     rows.push({
-      date: new Date(m.createdAt).toISOString().slice(0, 10),
+      date: localDate(m.createdAt),
       barcode: p?.barcode ?? '',
       product: p?.name ?? '',
       reason: STOCK_REASON_LABEL[m.reason],
@@ -115,7 +116,7 @@ export async function exportStockLedgerCsv(start?: number, end?: number): Promis
 
   const footer = [
     '',
-    `# STOCK IN THE SHOP NOW (${new Date().toISOString().slice(0, 10)})`,
+    `# STOCK IN THE SHOP NOW (${localDate()})`,
     valuationPapa ? valuationPapa.split('\n').map((l) => `# ${l}`).join('\n') : '# (nothing on the shelf)',
     `# Total stock value (MWK): ${(totalValue / 100).toFixed(2)}`,
   ].join('\n')
@@ -267,6 +268,22 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     { item: 'Less: refunds (voided sales)', amount_mwk: (stmt.returns / 100).toFixed(2) },
     { item: 'Cost of goods sold (at recorded cost)', amount_mwk: (stmt.cogs / 100).toFixed(2) },
     { item: 'Gross profit', amount_mwk: (stmt.grossProfit / 100).toFixed(2) },
+    ...(stmt.purchaseVariance !== 0
+      ? [
+          {
+            item: 'Purchase variance (depot price differences)',
+            amount_mwk: (stmt.purchaseVariance / 100).toFixed(2),
+          },
+        ]
+      : []),
+    ...(stmt.stockAdjust !== 0
+      ? [
+          {
+            item: 'Stock adjustments (stock takes)',
+            amount_mwk: (-stmt.stockAdjust / 100).toFixed(2),
+          },
+        ]
+      : []),
     { item: 'Expenses paid (rent, transport...)', amount_mwk: (stmt.expenses / 100).toFixed(2) },
     { item: 'Bad debts written off', amount_mwk: (stmt.badDebts / 100).toFixed(2) },
     { item: 'NET PROFIT', amount_mwk: (stmt.netProfit / 100).toFixed(2) },
@@ -278,7 +295,6 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     '',
     `# INCOME STATEMENT (${period})`,
     `# (${stmt.saleCount} sales, ${stmt.itemsSold} items)`,
-    stmt.purchaseVariance !== 0 ? `# Purchase variance (MWK), ${(stmt.purchaseVariance / 100).toFixed(2)}` : '',
     '',
     '# BALANCE SHEET (today)',
     '# ASSETS',

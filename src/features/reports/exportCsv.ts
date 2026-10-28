@@ -2,6 +2,7 @@ import Papa from 'papaparse'
 import { db } from '@/db'
 import { summariseCash } from '@/features/cash/cashService'
 import { creditTotals } from '@/features/credit/credit'
+import { localTime } from '@/domain/time'
 import type { Product } from '@/db/types'
 
 /**
@@ -47,7 +48,7 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
       return {
         date: sale.businessDate,
         receipt_no: sale.receiptNo,
-        time: new Date(sale.createdAt).toISOString().slice(11, 19),
+        time: localTime(sale.createdAt),
         cashier: sale.cashierName ?? '',
         customer: sale.customerName ?? '',
         barcode: l.barcode,

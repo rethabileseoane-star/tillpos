@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, withSyncMeta } from '@/db'
 import type { Product } from '@/db/types'
 import { formatMaluti } from '@/domain/money'
+import { localDate } from '@/domain/time'
 import { adjustStock } from '@/features/sales/salesService'
 import { useAppLock } from '@/features/security/LockContext'
 import { queueEntity } from '@/sync/outbox'
@@ -481,7 +482,7 @@ function ProductInfo({ product: p }: { product: Product }) {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return localDate()
 }
 
 /** Format a cent value as Maluti without the "M" prefix for inline use. */

@@ -2,6 +2,7 @@ import { db, withSyncMeta, getDeviceId } from '@/db'
 import type { CashMovement, Product, Sale, SaleLine, StockMovement } from '@/db/types'
 import type { Cents } from '@/domain/money'
 import { normalizeBarcode } from '@/domain/barcode'
+import { localDate } from '@/domain/time'
 import type { CartLine } from '@/features/cart/cartStore'
 import { cartSubtotal } from '@/features/cart/cartStore'
 import { loadTillLabel } from '@/features/settings/tillLabel'
@@ -9,10 +10,7 @@ import { queueEntity } from '@/sync/outbox'
 
 /** Local calendar day as YYYY-MM-DD. Day boundaries follow the device clock. */
 export function businessDate(d: Date = new Date()): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return localDate(d)
 }
 
 /**

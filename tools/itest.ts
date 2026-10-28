@@ -405,6 +405,32 @@ async function main() {
     assert.equal(await db.sales.count(), before + 8)
   })
 
+  await check('editing a queued sale keeps it before its lines in the outbox', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 1)],
+      paymentMethod: 'cash',
+      amountTendered: 500000,
+    })
+    await voidSale(sale.id, 'before first sync')
+
+    const line = (await db.saleLines.where('saleId').equals(sale.id).first())!
+    const queue = await db.outbox.orderBy('createdAt').toArray()
+    const saleAt = queue.findIndex(
+      (item) => item.entity === 'sales' && item.entityId === sale.id,
+    )
+    const lineAt = queue.findIndex(
+      (item) => item.entity === 'sale_lines' && item.entityId === line.id,
+    )
+    assert.ok(saleAt !== -1, 'the edited sale was not queued')
+    assert.ok(lineAt !== -1, 'the sale line was not queued')
+    assert.ok(
+      saleAt < lineAt,
+      'a sale edited before its first sync fell behind its own lines',
+    )
+  })
+
   await check('a cash sale tendered short of the total is refused', async () => {
     const before = await db.sales.count()
     await assert.rejects(

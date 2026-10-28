@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { localDate } from '@/domain/time'
 import { downloadBlob, exportProductsCsv } from '@/features/catalog/csvImport'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
 import { downloadBackupJson, eraseLocalData } from './backup'
@@ -107,7 +108,7 @@ export function RecoverySheet({
               void runExport('catalog', async () => {
                 downloadBlob(
                   await exportProductsCsv(),
-                  `catalog-${new Date().toISOString().slice(0, 10)}.csv`,
+                  `catalog-${localDate()}.csv`,
                 )
               })
             }

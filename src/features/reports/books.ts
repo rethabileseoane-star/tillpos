@@ -7,6 +7,7 @@ import type {
   StockMovement,
 } from '@/db/types'
 import type { Cents } from '@/domain/money'
+import { localDate, localTime } from '@/domain/time'
 import {
   CASH_REASON_LABEL,
   STOCK_REASON_LABEL,
@@ -103,7 +104,7 @@ export function salesJournal(data: BooksData, dates: string[]): BookTable {
       rows.push([
         sale.businessDate,
         sale.receiptNo,
-        new Date(sale.createdAt).toISOString().slice(11, 19),
+        localTime(sale.createdAt),
         l.name,
         l.qty,
         fmt2(l.unitPrice),
@@ -184,7 +185,7 @@ export function creditSalesJournal(data: BooksData, dates: string[]): BookTable 
     return [
       row.sale.businessDate,
       row.sale.receiptNo,
-      new Date(row.sale.createdAt).toISOString().slice(11, 19),
+      localTime(row.sale.createdAt),
       row.sale.customerName ?? '',
       fmt2(row.sale.total),
       fmt2(row.paid),
@@ -231,7 +232,7 @@ export function creditReceiptsJournal(data: BooksData, dates: string[]): BookTab
     const sale = m.refId ? saleById.get(m.refId) : undefined
     rows.push([
       m.businessDate,
-      new Date(m.createdAt).toISOString().slice(11, 19),
+      localTime(m.createdAt),
       sale?.customerName ?? 'Customer',
       sale?.receiptNo ?? '',
       fmt2(m.delta),
@@ -266,9 +267,7 @@ export function badDebtsJournal(data: BooksData, dates: string[]): BookTable {
     if (!day || !window(day)) continue
     rows.push([
       day,
-      sale.writtenOffAt
-        ? new Date(sale.writtenOffAt).toISOString().slice(11, 19)
-        : '',
+      sale.writtenOffAt ? localTime(sale.writtenOffAt) : '',
       sale.receiptNo,
       sale.customerName ?? '',
       fmt2(amount),
@@ -320,7 +319,7 @@ export function receiptsJournal(data: BooksData, dates: string[]): BookTable {
       m.reason === 'cash_in' && m.kind === 'loan' ? 'Money in (loan)' : CASH_REASON_LABEL[m.reason]
     rows.push([
       m.businessDate,
-      new Date(m.createdAt).toISOString().slice(11, 19),
+      localTime(m.createdAt),
       label,
       m.note || label,
       fmt2(pos),
@@ -351,7 +350,7 @@ export function paymentsJournal(data: BooksData, dates: string[]): BookTable {
     const label = CASH_REASON_LABEL[m.reason]
     rows.push([
       m.businessDate,
-      new Date(m.createdAt).toISOString().slice(11, 19),
+      localTime(m.createdAt),
       label,
       m.note || label,
       fmt2(-m.delta),
@@ -512,7 +511,7 @@ export function inventoryTable(data: BooksData, dates: string[]): BookTable {
     if (range && (sm.createdAt < range[0] || sm.createdAt >= range[1])) continue
     const p = byId.get(sm.productId)
     rows.push([
-      new Date(sm.createdAt).toISOString().slice(0, 10),
+      localDate(sm.createdAt),
       p?.name ?? 'Item',
       STOCK_REASON_LABEL[sm.reason],
       sm.delta,

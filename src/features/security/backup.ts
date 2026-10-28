@@ -11,6 +11,7 @@ import type {
   SaleLine,
   StockMovement,
 } from '@/db/types'
+import { localDate } from '@/domain/time'
 import { downloadBlob } from '@/features/catalog/csvImport'
 
 /**
@@ -101,7 +102,7 @@ export async function downloadBackupJson(): Promise<void> {
   const blob = new Blob([JSON.stringify(backup, null, 2)], {
     type: 'application/json;charset=utf-8',
   })
-  downloadBlob(blob, `till-backup-${new Date().toISOString().slice(0, 10)}.json`)
+  downloadBlob(blob, `till-backup-${localDate()}.json`)
 }
 
 /**

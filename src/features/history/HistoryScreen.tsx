@@ -7,7 +7,8 @@ import { businessDate, voidSale } from '@/features/sales/salesService'
 import { exportSalesCsv } from '@/features/reports/exportCsv'
 import { useAppLock } from '@/features/security/LockContext'
 import { saleCashierName } from '@/features/security/staff'
-import { feedbackSuccess } from '@/ui/feedback'
+import { downloadBlob } from '@/features/catalog/csvImport'
+import { feedbackError, feedbackSuccess } from '@/ui/feedback'
 import {
   recordCreditPayment,
   writeOffCreditSale,
@@ -122,7 +123,11 @@ export function HistoryScreen() {
         </div>
         {isOwner && (
           <button
-            onClick={() => void exportSalesCsv([date])}
+            onClick={() => {
+              void exportSalesCsv([date])
+                .then((blob) => downloadBlob(blob, `sales-${date}.csv`))
+                .catch(() => feedbackError())
+            }}
             className="text-xs text-slate-400 underline"
           >
             Export day

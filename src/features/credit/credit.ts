@@ -1,5 +1,6 @@
 import type { CashMovement, Sale } from '@/db/types'
 import type { Cents } from '@/domain/money'
+import { localDate } from '@/domain/time'
 
 /**
  * Credit-sale arithmetic, kept pure so the till screen, the journals and the
@@ -167,11 +168,7 @@ export function customerCreditTotals(
 
 /** Local calendar day as YYYY-MM-DD, matching the till's business date. */
 export function localBusinessDate(timestamp: number): string {
-  const d = new Date(timestamp)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return localDate(timestamp)
 }
 
 /** The day a write-off was posted, falling back to its timestamp. */

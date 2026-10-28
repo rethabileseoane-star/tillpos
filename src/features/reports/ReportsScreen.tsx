@@ -31,19 +31,33 @@ export function ReportsScreen() {
   const [days, setDays] = useState(14)
   const today = businessDate()
 
-  const sales =
+  // Load exactly the report window. A fixed cap would silently drop sales and
+  // items once a busy shop passed it, making the Z-report disagree with the PDF.
+  const reportData =
     useLiveQuery(
-      () => db.sales.orderBy('createdAt').reverse().limit(2000).toArray(),
-      [],
-    ) ?? []
-
-  const lines =
-    useLiveQuery(() => db.saleLines.limit(20000).toArray(), []) ?? []
+      async () => {
+        const start = new Date()
+        start.setDate(start.getDate() - (days - 1))
+        const first = businessDate(start)
+        const rows = await db.sales
+          .where('businessDate')
+          .between(first, today, true, true)
+          .toArray()
+        const ids = rows.map((sale) => sale.id)
+        const lines = ids.length
+          ? await db.saleLines.where('saleId').anyOf(ids).toArray()
+          : []
+        return { sales: rows, lines }
+      },
+      [days, today],
+    ) ?? { sales: [], lines: [] }
+  const sales = reportData.sales
+  const lines = reportData.lines
 
   const cash = useLiveQuery(() => db.cashMovements.toArray(), []) ?? []
 
-  // The Z-report's sales list is capped for speed; the debt position needs the
-  // whole book, so read every sale for that one figure.
+  // The debt position needs the whole book; the credit cards are not limited to
+  // the report window.
   const allSales = useLiveQuery(() => db.sales.toArray(), []) ?? []
 
   const report = useMemo(() => buildReport(sales, lines, days), [sales, lines, days])
@@ -483,8 +497,7 @@ export function buildReport(sales: Sale[], lines: SaleLine[], days: number) {
     day.net += sale.total
   }
 
-  // Index the sales once. The previous `sales.find` was O(sales × lines) and
-  // this screen renders up to 2,000 sales and 20,000 lines.
+  // Index the sales once so matching lines stays linear for a busy window.
   const saleById = new Map(sales.map((s) => [s.id, s]))
 
   for (const line of lines) {
