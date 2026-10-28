@@ -205,9 +205,13 @@ and creates an amount owed by the customer. Money handed over later is a
 drawer and reduces the debt, and it is never counted as a second sale. A
 write-off removes the remaining debt as a bad-debt expense without moving cash.
 If a payment reaches this till from another device after the write-off, it
-reduces the bad-debt loss rather than leaving a negative receivable.
-Voiding a credit sale reverses its revenue and restores its stock, but refunds
-only the cash the customer actually paid; the unpaid balance simply disappears.
+reduces the bad-debt loss rather than leaving a negative receivable. If two
+tills collect the same balance, or a payment arrives after a void, the extra
+cash is held for the customer as a customer-credit liability (account 2400), not
+as a negative receivable. That keeps the trial balance and balance sheet tied
+even when offline tills merge. Voiding a credit sale reverses its revenue and
+restores its stock, but refunds only the cash the customer actually paid; the
+unpaid balance simply disappears.
 A written-off sale cannot be voided. The trial balance, P&L, cash flow and
 balance sheet read the same rows, so the sales journal, credit book and drawer
 stay tied together.

@@ -35,6 +35,7 @@ import {
   exportStockLedgerCsv,
 } from '../src/features/reports/exportAccounts'
 import { buildBookPack, loadBooksData } from '../src/features/reports/books'
+import { balanceSheet, trialBalances } from '../src/features/reports/accounts'
 import { exportBooksPdf } from '../src/features/reports/pdfPack'
 import { buildReport } from '../src/features/reports/ReportsScreen'
 import { loadShopName, saveShopName } from '../src/features/settings/shopName'
@@ -995,6 +996,26 @@ async function main() {
     assert.match(bs.rows.join(','), /Customers who owe \(credit\),2,000\.00/)
     assert.match(bs.notes[0]!, /Assets equal/)
 
+    // Read the same rows straight through the accounting functions, so a pack
+    // formatting change cannot hide an unbalanced ledger.
+    const directTb = trialBalances(
+      data.sales,
+      data.lines,
+      data.cash,
+      data.products,
+      data.stockMoves,
+    )
+    assert.equal(directTb.difference, 0, 'trial balance must tie')
+    const directBs = balanceSheet(
+      data.cash,
+      data.products,
+      data.stockMoves,
+      data.sales,
+      data.lines,
+    )
+    assert.equal(directBs.check, 0, 'balance sheet must balance')
+    assert.equal(directBs.customerCredits, 0, 'no customer credit in this day')
+
     // The credit CSV carries the per-sale rows and the three footers.
     const creditCsv = await (await exportCreditJournalCsv([businessDate()])).text()
     assert.match(creditCsv, /^date,receipt_no,customer,total_mwk,paid_mwk,balance_mwk/m)
@@ -1009,6 +1030,43 @@ async function main() {
     assert.match(salesCsv, /# Credit collected in period \(MWK\): 2000/)
     assert.match(salesCsv, /# Credit still owed now \(MWK\): 2000/)
     assert.match(salesCsv, /# Bad debts written off in period \(MWK\): 5500/)
+  })
+
+  await check('a synced overpayment becomes a customer credit and the books stay level', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 1)],
+      paymentMethod: 'credit',
+      amountTendered: null,
+      customerName: 'Overpaid customer',
+    })
+    await recordCreditPayment({ saleId: sale.id, amount: sale.total, staffName: 'Cashier A' })
+
+    // Simulate a second till that collected the same balance before syncing.
+    const now = Date.now()
+    await db.cashMovements.add({
+      id: `overpay-${now}`,
+      reason: 'credit_payment',
+      delta: 1000,
+      refId: sale.id,
+      businessDate: businessDate(),
+      note: 'Second till collected the balance offline',
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      rev: 1,
+      deviceId: 'device-b',
+      staffName: 'Cashier B',
+    })
+
+    const data = await loadBooksData()
+    const tb = trialBalances(data.sales, data.lines, data.cash, data.products, data.stockMoves)
+    assert.equal(tb.difference, 0, 'trial balance must tie after an overpayment')
+    const bs = balanceSheet(data.cash, data.products, data.stockMoves, data.sales, data.lines)
+    assert.equal(bs.receivables, 0)
+    assert.equal(bs.customerCredits, 1000, 'the extra cash is owed back to the customer')
+    assert.equal(bs.check, 0, 'balance sheet must balance after an overpayment')
   })
 
   console.log('buying stock')
@@ -1114,7 +1172,8 @@ async function main() {
     assert.match(text, /# Retained profit, all time \(MWK\), 900\.00/)
     assert.match(text, /# Owner took \(MWK\), -3000\.00/)
     assert.match(text, /# Loans owed \(MWK\), 0\.00/)
-    assert.match(text, /# CHECK - assets minus \(loans \+ equity\) \(MWK\), 0\.00/)
+    assert.match(text, /# Customer credits held \(MWK\), 0\.00/)
+    assert.match(text, /# CHECK - assets minus \(liabilities \+ equity\) \(MWK\), 0\.00/)
   })
 
   await check('the cash ledger export carries a true running balance', async () => {

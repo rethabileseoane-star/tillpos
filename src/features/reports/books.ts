@@ -469,19 +469,28 @@ export function balanceSheetTable(data: BooksData): BookTable {
     ['TOTAL ASSETS', fmt2(bs.totalAssets)],
     ['LIABILITIES'],
     ['  Loans owed', fmt2(bs.loans)],
+    ['  Customer credits (cash held for customers)', fmt2(bs.customerCredits)],
+    ['TOTAL LIABILITIES', fmt2(bs.loans + bs.customerCredits)],
     ['OWNER\u2019S EQUITY'],
     ['  Owner capital (cash put in)', fmt2(bs.capitalIn)],
     ['  Stock brought in', fmt2(bs.contributedStock)],
     ['  Retained profit', fmt2(bs.retainedProfit)],
     ['  Owner drawings', fmt2(bs.drawings)],
     ['TOTAL EQUITY', fmt2(bs.totalEquity)],
-    ['LIABILITIES + EQUITY', fmt2(bs.loans + bs.totalEquity)],
+    ['LIABILITIES + EQUITY', fmt2(bs.loans + bs.customerCredits + bs.totalEquity)],
   ]
   const notes = [
     bs.check === 0
-      ? 'Assets equal loans plus equity — the books agree with the tin and the shelf.'
-      : `Check (M): ${fmt2(bs.check)} — unposted movement, usually a cost revaluation.`,
+      ? 'Assets equal liabilities plus equity - the books agree with the tin and the shelf.'
+      : `Check (M): ${fmt2(bs.check)} - unposted movement, usually a cost revaluation.`,
   ]
+  if (bs.customerCredits !== 0) {
+    notes.push(
+      bs.customerCredits > 0
+        ? 'Customer credits are cash held for customers after an overpayment or a late payment on a voided sale.'
+        : 'A negative customer credit is an over-refund the customer owes back.',
+    )
+  }
   return {
     title: 'Balance sheet',
     subtitle: 'As of today',

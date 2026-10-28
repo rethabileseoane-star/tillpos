@@ -4,7 +4,7 @@ import { db } from '@/db'
 import { formatMaluti, type Cents } from '@/domain/money'
 import { businessDate } from '@/features/sales/salesService'
 import { summariseCash } from '@/features/cash/cashService'
-import { creditTotals } from '@/features/credit/credit'
+import { creditTotals, customerCreditTotals } from '@/features/credit/credit'
 import { exportSalesCsv } from './exportCsv'
 import {
   exportCashLedgerCsv,
@@ -54,6 +54,10 @@ export function ReportsScreen() {
   const credit = useMemo(
     () => creditTotals(allSales, cash, report.days.map((d) => d.date)),
     [allSales, cash, report],
+  )
+  const customerCredits = useMemo(
+    () => customerCreditTotals(allSales, cash).total,
+    [allSales, cash],
   )
 
   // Windows for the exports: the report's dates, plus a timestamp range for the
@@ -231,6 +235,19 @@ export function ReportsScreen() {
             {formatMaluti(credit.writtenOff)}
           </p>
         </div>
+        {customerCredits !== 0 && (
+          <div className="card">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">
+              Customer credits (now)
+            </p>
+            <p className="font-mono text-xl font-semibold text-violet-300">
+              {formatMaluti(customerCredits)}
+            </p>
+            <p className="text-[10px] text-slate-500">
+              {customerCredits > 0 ? 'Cash held for customers' : 'Customer owes an over-refund'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Daily bars */}

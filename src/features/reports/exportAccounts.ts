@@ -289,6 +289,8 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     '',
     '# LIABILITIES',
     `# Loans owed (MWK), ${(bs.loans / 100).toFixed(2)}`,
+    `# Customer credits held (MWK), ${(bs.customerCredits / 100).toFixed(2)}`,
+    `# Total liabilities (MWK), ${((bs.loans + bs.customerCredits) / 100).toFixed(2)}`,
     '',
     "# OWNER'S EQUITY",
     `# Owner capital in (float + money in) (MWK), ${(bs.capitalIn / 100).toFixed(2)}`,
@@ -297,7 +299,7 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     `# Owner took (MWK), ${(bs.drawings / 100).toFixed(2)}`,
     `# Total owner's equity (MWK), ${(bs.totalEquity / 100).toFixed(2)}`,
     '',
-    `# CHECK - assets minus (loans + equity) (MWK), ${(bs.check / 100).toFixed(2)}`,
+    `# CHECK - assets minus (liabilities + equity) (MWK), ${(bs.check / 100).toFixed(2)}`,
     '# Zero means the books agree with the tin and the shelf. A non-zero figure',
     '# is unposted movement: usually a cost revaluation made straight on a product.',
   ].filter((l) => l !== '').join('\n')

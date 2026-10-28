@@ -10,6 +10,7 @@ import type {
 import type { Cents } from '@/domain/money'
 import {
   creditPaidMap,
+  customerCreditTotals,
   effectiveWriteOffAmount,
   outstandingCredit,
   writeOffDate,
@@ -65,6 +66,7 @@ export const ACCOUNTS = {
   CASH: 1100,
   INVENTORY: 1200,
   RECEIVABLES: 1300,
+  CUSTOMER_CREDITS: 2400,
   LOANS: 2500,
   CAPITAL: 3100,
   CONTRIBUTED: 3110,
@@ -82,6 +84,7 @@ export const ACCOUNT_NAMES: Record<number, string> = {
   [ACCOUNTS.CASH]: 'Cash in drawer',
   [ACCOUNTS.INVENTORY]: 'Stock in the shop',
   [ACCOUNTS.RECEIVABLES]: 'Customers who owe (credit)',
+  [ACCOUNTS.CUSTOMER_CREDITS]: 'Customer credits (cash held for customers)',
   [ACCOUNTS.LOANS]: 'Loans owed',
   [ACCOUNTS.CAPITAL]: 'Owner capital (cash put in)',
   [ACCOUNTS.CONTRIBUTED]: 'Stock brought in',
@@ -130,6 +133,7 @@ export function trialBalances(
   stockMoves: StockMovement[],
 ): { rows: TrialBalanceRow[]; difference: Cents } {
   const byId = new Map(products.map((p) => [p.id, p]))
+  const saleById = new Map(sales.map((s) => [s.id, s]))
   const b = new Map<number, Cents>()
   const add = (acc: number, v: Cents) => b.set(acc, (b.get(acc) ?? 0) + v)
 
@@ -180,26 +184,64 @@ export function trialBalances(
     collected.set(m.refId, (collected.get(m.refId) ?? 0) + m.delta)
   }
 
+  // Refunds already handed back on a sale. Void movements are negative, so a
+  // positive map value is money returned to the customer.
+  const refunded = new Map<string, Cents>()
+  for (const m of cash) {
+    if (m.reason !== 'void' || !m.refId) continue
+    refunded.set(m.refId, (refunded.get(m.refId) ?? 0) - m.delta)
+  }
+
   // Every sale bills its full total, whether it was paid in cash or on credit.
   // A void adds a returns debit and reverses the asset side: cash for a cash
   // sale (the void movement above), the receivable for a credit sale.
   for (const sale of sales) {
+    const received = collected.get(sale.id) ?? 0
     add(ACCOUNTS.SALES, -sale.total)
     if (sale.paymentMethod === 'credit') add(ACCOUNTS.RECEIVABLES, sale.total)
     if (sale.status === 'voided') {
       add(ACCOUNTS.RETURNS, sale.total)
       if (sale.paymentMethod === 'credit') {
-        add(ACCOUNTS.RECEIVABLES, -(sale.total - (collected.get(sale.id) ?? 0)))
+        add(ACCOUNTS.RECEIVABLES, -(sale.total - received))
       }
     }
     // A voided sale has no receivable and no bad debt. This can only happen if
     // two offline tills write off and void the same sale before they sync; the
     // void wins for the books so the write-off cannot double-count the loss.
-    const written = effectiveWriteOffAmount(sale, collected.get(sale.id) ?? 0)
+    const written = effectiveWriteOffAmount(sale, received)
     if (written > 0) {
       add(ACCOUNTS.BAD_DEBTS, written)
       add(ACCOUNTS.RECEIVABLES, -written)
     }
+
+    // Turn a negative receivable into a customer-credit liability. A completed
+    // sale can be overpaid by two tills collecting the same balance offline. A
+    // voided sale can receive a payment after its refund was already recorded.
+    // The cash is real, but the shop is holding it for the customer.
+    if (sale.paymentMethod === 'credit') {
+      if (sale.status === 'completed') {
+        const overpaid = Math.max(0, received - sale.total)
+        if (overpaid > 0) {
+          add(ACCOUNTS.RECEIVABLES, overpaid)
+          add(ACCOUNTS.CUSTOMER_CREDITS, -overpaid)
+        }
+      } else if (sale.status === 'voided') {
+        const held = received - (refunded.get(sale.id) ?? 0)
+        if (held !== 0) add(ACCOUNTS.CUSTOMER_CREDITS, -held)
+      }
+    }
+  }
+
+  // A credit payment with no credit sale behind it is still cash the shop is
+  // holding for someone. Reclassify the negative receivable the cash loop left.
+  let unattached = 0
+  for (const [saleId, received] of collected) {
+    const sale = saleById.get(saleId)
+    if (!sale || sale.paymentMethod !== 'credit') unattached += received
+  }
+  if (unattached !== 0) {
+    add(ACCOUNTS.RECEIVABLES, unattached)
+    add(ACCOUNTS.CUSTOMER_CREDITS, -unattached)
   }
 
   // Completed sales consume inventory; each line depletes stock at cost.
@@ -451,6 +493,11 @@ export interface BalanceSheet {
   totalAssets: Cents
   /** Outstanding loans: borrowed minus repaid. */
   loans: Cents
+  /**
+   * Cash held for customers after an overpayment, a late payment on a voided
+   * sale, or a payment that arrived before its sale. Positive = owed back.
+   */
+  customerCredits: Cents
   /** Net opening float + own money put in, all time. */
   capitalIn: Cents
   contributedStock: Cents
@@ -459,14 +506,14 @@ export interface BalanceSheet {
   drawings: Cents
   totalEquity: Cents
   /**
-   * Assets minus (loans + equity). Zero means the tin and the shelf agree with
-   * the books to the tambala. A non-zero figure is unposted movement — usually
-   * a cost revaluation made straight on a product.
+   * Assets minus (loans + customer credits + equity). Zero means the tin and
+   * the shelf agree with the books to the tambala. A non-zero figure is
+   * unposted movement — usually a cost revaluation made straight on a product.
    */
   check: Cents
 }
 
-/** The position right now: assets on one side, loans and equity on the other. */
+/** The position right now: assets against liabilities and owner's equity. */
 export function balanceSheet(
   cash: CashMovement[],
   products: Product[],
@@ -479,6 +526,7 @@ export function balanceSheet(
   const cashTotal = cash.reduce((s, m) => s + m.delta, 0)
   const stockValue = products.reduce((s, p) => s + p.stockQty * (p.cost ?? p.price), 0)
   const receivables = outstandingReceivables(sales, cash)
+  const credits = customerCreditTotals(sales, cash)
 
   const loans = cash
     .filter((m) => (m.reason === 'cash_in' && m.kind === 'loan') || m.reason === 'loan_repay')
@@ -509,12 +557,17 @@ export function balanceSheet(
     receivables,
     totalAssets: cashTotal + stockValue + receivables,
     loans,
+    customerCredits: credits.total,
     capitalIn,
     contributedStock,
     retainedProfit: allTime.netProfit,
     drawings,
     totalEquity,
-    check: cashTotal + stockValue + receivables - (loans + totalEquity),
+    check:
+      cashTotal +
+      stockValue +
+      receivables -
+      (loans + credits.total + totalEquity),
   }
 }
 

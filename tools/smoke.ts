@@ -723,6 +723,16 @@ check('voiding a part-paid credit sale refunds only the cash received', () => {
   assert.equal(stmt.netProfit, 0)
   assert.equal(cashFlow(cash, ['2026-10-12']).operatingIn, 0)
   assert.equal(cashFlow(cash, ['2026-10-12']).closing, 0)
+
+  const bs = balanceSheet(
+    cash,
+    [{ ...creditSugar, stockQty: 46 }],
+    stock,
+    [sale],
+    lines,
+  )
+  assert.equal(bs.customerCredits, 0, 'a full refund leaves no customer credit')
+  assert.equal(bs.check, 0)
 })
 
 check('a void wins over a stale write-off on the same sale', () => {
@@ -806,6 +816,104 @@ check('a payment after a write-off reduces the bad debt and keeps the books tied
   const recoveredPaid = creditPaidMap(recovered)
   assert.equal(effectiveWriteOffAmount(sale, recoveredPaid.get('C001') ?? 0), 0)
   assert.equal(creditState(sale, recoveredPaid), 'paid')
+})
+
+check('an overpayment is a customer credit, not a negative receivable', () => {
+  const sale = creditSale('C001')
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const cash = [
+    mkCash('credit_payment', fromMaluti(7000), '2026-10-12', {
+      id: 'pay-1',
+      refId: 'C001',
+    }),
+  ]
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], creditStock())
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined, 'no negative receivable')
+  assert.equal(by.get(ACCOUNTS.CUSTOMER_CREDITS), -fromMaluti(1000))
+
+  const bs = balanceSheet(cash, [creditSugar], creditStock(), [sale], lines)
+  assert.equal(bs.receivables, 0)
+  assert.equal(bs.customerCredits, fromMaluti(1000))
+  assert.equal(bs.check, 0)
+})
+
+check('a payment that arrives after a void is a customer credit', () => {
+  const sale = creditSale('C001', 'voided')
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const cash = [
+    mkCash('credit_payment', fromMaluti(2000), '2026-10-12', {
+      id: 'pay-1',
+      refId: 'C001',
+    }),
+  ]
+  const stock = [...creditStock(), mkStock('s1', 4, 'void')]
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], stock)
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined)
+  assert.equal(by.get(ACCOUNTS.CUSTOMER_CREDITS), -fromMaluti(2000))
+
+  const bs = balanceSheet(
+    cash,
+    [{ ...creditSugar, stockQty: 46 }],
+    stock,
+    [sale],
+    lines,
+  )
+  assert.equal(bs.customerCredits, fromMaluti(2000))
+  assert.equal(bs.check, 0)
+})
+
+check('a payment with no sale behind it is a customer credit', () => {
+  const cash = [
+    mkCash('credit_payment', fromMaluti(1000), '2026-10-12', {
+      id: 'pay-1',
+      refId: 'missing-sale',
+    }),
+  ]
+  const tb = trialBalances([], [], cash, [], [])
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), undefined)
+  assert.equal(by.get(ACCOUNTS.CUSTOMER_CREDITS), -fromMaluti(1000))
+
+  const bs = balanceSheet(cash, [], [], [], [])
+  assert.equal(bs.receivables, 0)
+  assert.equal(bs.customerCredits, fromMaluti(1000))
+  assert.equal(bs.check, 0)
+})
+
+check('a duplicate credit refund becomes a customer receivable, not an imbalance', () => {
+  const sale = creditSale('C001', 'voided')
+  const lines = [mkLine('C001', 's1', fromMaluti(1500), 4)]
+  const cash = [
+    mkCash('credit_payment', fromMaluti(6000), '2026-10-12', {
+      id: 'pay-1',
+      refId: 'C001',
+    }),
+    mkCash('void', -fromMaluti(6000), '2026-10-12', { id: 'refund-1', refId: 'C001' }),
+    mkCash('void', -fromMaluti(6000), '2026-10-12', { id: 'refund-2', refId: 'C001' }),
+  ]
+  const stock = [...creditStock(), mkStock('s1', 4, 'void')]
+
+  const tb = trialBalances([sale], lines, cash, [creditSugar], stock)
+  assert.equal(tb.difference, 0)
+  const by = new Map(tb.rows.map((r) => [r.account, r.balance]))
+  assert.equal(by.get(ACCOUNTS.CUSTOMER_CREDITS), fromMaluti(6000))
+
+  const bs = balanceSheet(
+    cash,
+    [{ ...creditSugar, stockQty: 46 }],
+    stock,
+    [sale],
+    lines,
+  )
+  assert.equal(bs.customerCredits, -fromMaluti(6000))
+  assert.equal(bs.check, 0)
 })
 
 check('credit totals use the right day for sales, payments and write-offs', () => {

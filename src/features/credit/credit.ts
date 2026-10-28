@@ -108,6 +108,63 @@ export function outstandingCredit(
   return outstandingCreditRows(sales, cash).reduce((sum, row) => sum + row.balance, 0)
 }
 
+export interface CustomerCreditTotals {
+  /** Cash held because a completed credit sale was paid more than once. */
+  overpayments: Cents
+  /** Payments on voided sales that no refund has returned to the customer. */
+  unrefundedVoids: Cents
+  /** Credit payments that do not point at a known credit sale. */
+  unattached: Cents
+  /** Signed total: positive means the shop owes the customer. */
+  total: Cents
+}
+
+/**
+ * Cash the shop is holding for customers rather than for itself.
+ *
+ * Two tills can collect the same balance before they sync, a payment can reach
+ * the till after another till voided the sale, and a pull can deliver a payment
+ * before its sale. In each case the drawer has real cash but the customer is
+ * owed it back. Calling this a negative receivable would make the balance sheet
+ * lose the amount, so it is a customer-credit liability. A negative total is an
+ * over-refund: the customer owes the shop instead.
+ */
+export function customerCreditTotals(
+  sales: readonly Sale[],
+  cash: readonly CashMovement[],
+): CustomerCreditTotals {
+  const saleById = new Map(sales.map((s) => [s.id, s]))
+  const paid = creditPaidMap(cash)
+  const refunded = new Map<string, Cents>()
+  for (const m of cash) {
+    if (m.reason !== 'void' || !m.refId) continue
+    // Void movements are negative; store the refund as a positive amount.
+    refunded.set(m.refId, (refunded.get(m.refId) ?? 0) - m.delta)
+  }
+
+  let overpayments: Cents = 0
+  let unrefundedVoids: Cents = 0
+  let unattached: Cents = 0
+  for (const [saleId, received] of paid) {
+    const sale = saleById.get(saleId)
+    if (!sale || sale.paymentMethod !== 'credit') {
+      unattached += received
+      continue
+    }
+    if (sale.status === 'completed') {
+      overpayments += Math.max(0, received - sale.total)
+    } else if (sale.status === 'voided') {
+      unrefundedVoids += received - (refunded.get(saleId) ?? 0)
+    }
+  }
+  return {
+    overpayments,
+    unrefundedVoids,
+    unattached,
+    total: overpayments + unrefundedVoids + unattached,
+  }
+}
+
 /** Local calendar day as YYYY-MM-DD, matching the till's business date. */
 export function localBusinessDate(timestamp: number): string {
   const d = new Date(timestamp)
