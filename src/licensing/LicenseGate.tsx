@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { copyText } from './format'
+import { useEffect, useState, type ReactNode } from 'react'
+import { copyText, normalizeLicenseKey } from './format'
 import { licenseServerConfigured } from './config'
 import { useLicense } from './LicenseContext'
 
@@ -57,10 +57,72 @@ function ActivationScreen() {
   const license = useLicense()
   const [key, setKey] = useState('')
   const [copied, setCopied] = useState(false)
+  const [shared, setShared] = useState(false)
+  const [autoFilled, setAutoFilled] = useState(false)
+
+  // A quick-activation link (see the seller admin screen) carries the licence
+  // key in the URL so the customer does not have to type it. Read it once,
+  // pre-fill the field, and remove it from the address bar immediately so it is
+  // not left in history or shared by mistake.
+  useEffect(() => {
+    const hash = window.location.hash
+    const query = hash.includes('?')
+      ? hash.slice(hash.indexOf('?') + 1)
+      : window.location.search.replace(/^\\?/, '')
+    const params = new URLSearchParams(query)
+    const fromUrl =
+      params.get('key') ?? params.get('license') ?? params.get('licence')
+    if (!fromUrl) return
+    setKey(normalizeLicenseKey(fromUrl))
+    setAutoFilled(true)
+    try {
+      const url = new URL(window.location.href)
+      url.hash = '#/'
+      url.search = ''
+      window.history.replaceState({}, '', url.toString())
+    } catch {
+      // Older browsers: leaving the URL alone is harmless.
+    }
+  }, [])
 
   const submit = async () => {
     const result = await license.activate(key)
-    if (result.ok) setKey('')
+    if (result.ok) {
+      setKey('')
+      setAutoFilled(false)
+    }
+  }
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text.trim()) {
+        setKey(normalizeLicenseKey(text))
+        setAutoFilled(false)
+      }
+    } catch {
+      // Clipboard access is optional; the manual field still works.
+    }
+  }
+
+  const shareDeviceCode = async () => {
+    const text = license.deviceCode
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Till device code',
+          text: `Device code for Till POS activation: ${text}`,
+        })
+        setShared(true)
+        window.setTimeout(() => setShared(false), 1500)
+        return
+      } catch {
+        // Fall through to copying.
+      }
+    }
+    const ok = await copyText(text)
+    setShared(ok)
+    window.setTimeout(() => setShared(false), 1500)
   }
 
   return (
@@ -88,10 +150,17 @@ function ActivationScreen() {
           >
             {copied ? 'Copied' : 'Copy'}
           </button>
+          <button
+            type="button"
+            className="btn-ghost !px-3 !py-3 text-xs"
+            onClick={() => void shareDeviceCode()}
+          >
+            {shared ? 'Shared' : 'Share'}
+          </button>
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
           Send this code to your supplier. It identifies this installation, not
-          the person using it.
+          the person using it. Share or copy it in one tap.
         </p>
       </div>
 
@@ -103,13 +172,30 @@ function ActivationScreen() {
           id="licence-key"
           className="field font-mono !py-3 text-sm uppercase"
           value={key}
-          onChange={(e) => setKey(e.target.value.toUpperCase())}
+          onChange={(e) => {
+            setKey(e.target.value.toUpperCase())
+            setAutoFilled(false)
+          }}
           placeholder="TILL-XXXX-XXXX-XXXX-XXXX"
           autoCapitalize="characters"
           autoCorrect="off"
           spellCheck={false}
           autoFocus
         />
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            className="btn-ghost !px-3 !py-2 text-xs"
+            onClick={() => void pasteFromClipboard()}
+          >
+            Paste from clipboard
+          </button>
+          {autoFilled && (
+            <span className="self-center text-[11px] text-cash-300">
+              Filled from activation link
+            </span>
+          )}
+        </div>
         <button
           className="btn-primary mt-3 w-full !py-3 text-sm"
           disabled={license.busy || key.trim() === '' || !licenseServerConfigured}

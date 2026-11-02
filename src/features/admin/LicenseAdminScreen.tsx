@@ -807,6 +807,10 @@ function LicenseAdminCard({
 
 function RevealedKeyModal({ value, onClose }: { value: RevealedKey; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const activationLink = `${window.location.origin}${window.location.pathname}#/?key=${encodeURIComponent(
+    value.key,
+  )}`
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="w-full max-w-md rounded-2xl border border-ink-700 bg-ink-800 p-4">
@@ -826,9 +830,19 @@ function RevealedKeyModal({ value, onClose }: { value: RevealedKey; onClose: () 
         >
           {copied ? 'Copied' : 'Copy key'}
         </button>
+        <button
+          className="btn-ghost mt-2 w-full !py-2.5 text-sm"
+          onClick={async () => {
+            const ok = await copyText(activationLink)
+            setLinkCopied(ok)
+          }}
+        >
+          {linkCopied ? 'Activation link copied' : 'Copy quick activation link'}
+        </button>
         <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-          Give it to the customer only after their device codes are added. They
-          enter the key on each approved phone.
+          Give it to the customer only after their device codes are added. The
+          quick link pre-fills the key on an approved phone; the customer still
+          taps Activate.
         </p>
         <button className="btn-ghost mt-2 w-full !py-2.5 text-sm" onClick={onClose}>
           Done
