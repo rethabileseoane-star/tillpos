@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { copyText, normalizeLicenseKey } from './format'
-import { licenseServerConfigured } from './config'
+import { licenseDormant, licenseServerConfigured } from './config'
 import { useLicense } from './LicenseContext'
 
 /**
@@ -12,6 +12,10 @@ import { useLicense } from './LicenseContext'
  */
 export function LicenseGate({ children }: { children: ReactNode }) {
   const license = useLicense()
+
+  // The licence Edge Function is not deployed yet. Keep the till usable in the
+  // meantime; set VITE_LICENSE_DORMANT=false and rebuild to turn licensing on.
+  if (licenseDormant) return <>{children}</>
 
   if (license.status === 'checking') return <LicenseBoot />
   if (license.status === 'activation') return <ActivationScreen />

@@ -45,3 +45,10 @@ export const licenseConfig = {
 } as const
 
 export const licenseServerConfigured = Boolean(licenseConfig.url && licenseConfig.anonKey)
+
+// Temporary: the licence Edge Function is not deployed yet, so the gate would
+// lock every installation. Keep this true until the function and its secrets are
+// live; set VITE_LICENSE_DORMANT=false and rebuild to re-enable licensing.
+export const licenseDormant =
+  readEnv('VITE_LICENSE_DORMANT') !== '0' &&
+  readEnv('VITE_LICENSE_DORMANT') !== 'false'
