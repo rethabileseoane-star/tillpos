@@ -15,6 +15,7 @@ import {
 } from '@/features/cash/cashService'
 import { feedbackSuccess } from '@/ui/feedback'
 import { BarcodeScanSheet } from '@/features/scanner/BarcodeScanSheet'
+import { totalTabBalance } from '@/features/tabs/tabs'
 
 const MOVEMENT_LABEL: Record<CashReason, string> = {
   sale: 'Sale',
@@ -26,6 +27,8 @@ const MOVEMENT_LABEL: Record<CashReason, string> = {
   expense: 'Paid out',
   loan_repay: 'Loan repaid',
   credit_payment: 'Credit payment',
+  tab_credit: 'Tab credit',
+  tab_payout: 'Tab paid out',
 }
 
 const MOVEMENT_CHIP: Record<CashReason, string> = {
@@ -38,6 +41,8 @@ const MOVEMENT_CHIP: Record<CashReason, string> = {
   expense: 'bg-rose-500/15 text-rose-300',
   loan_repay: 'bg-violet-500/15 text-violet-300',
   credit_payment: 'bg-cash-500/15 text-cash-400',
+  tab_credit: 'bg-sky-500/15 text-sky-300',
+  tab_payout: 'bg-amber-500/15 text-amber-300',
 }
 
 type SheetKind = 'buy' | 'float' | 'cash_in' | 'drawing' | 'expense' | 'loan_repay'
@@ -55,6 +60,8 @@ export function MoneyScreen() {
     () => db.stockMovements.orderBy('createdAt').reverse().limit(800).toArray(),
     [],
   ) ?? []
+  const tabEntries = useLiveQuery(() => db.tabEntries.toArray(), []) ?? []
+  const tabsOwed = useMemo(() => totalTabBalance(tabEntries), [tabEntries])
 
   const balance = useMemo(() => cash.reduce((s, m) => s + m.delta, 0), [cash])
 
@@ -137,6 +144,7 @@ export function MoneyScreen() {
           {todayStock < 0 && <> · {formatMaluti(-todayStock)} on stock</>}
           {' '}· stock in shop ≈ {formatMaluti(stockWorth)}
           {loansOwed > 0 && <> · loans owed {formatMaluti(loansOwed)}</>}
+          {tabsOwed > 0 && <> · shop owes tabs {formatMaluti(tabsOwed)}</>}
         </p>
       </div>
 

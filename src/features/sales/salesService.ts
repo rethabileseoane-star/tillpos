@@ -1,11 +1,20 @@
 import { db, withSyncMeta, getDeviceId } from '@/db'
-import type { CashMovement, Product, Sale, SaleLine, StockMovement } from '@/db/types'
+import type {
+  CashMovement,
+  CustomerTab,
+  Product,
+  Sale,
+  SaleLine,
+  StockMovement,
+  TabEntry,
+} from '@/db/types'
 import type { Cents } from '@/domain/money'
 import { normalizeBarcode } from '@/domain/barcode'
 import { localDate } from '@/domain/time'
 import type { CartLine } from '@/features/cart/cartStore'
 import { cartSubtotal } from '@/features/cart/cartStore'
 import { loadTillLabel } from '@/features/settings/tillLabel'
+import { cleanTabName, tabBalance } from '@/features/tabs/tabs'
 import { queueEntity } from '@/sync/outbox'
 
 /** Local calendar day as YYYY-MM-DD. Day boundaries follow the device clock. */
@@ -37,6 +46,14 @@ export interface CommitInput {
   customerName?: string
   /** Credit sale only: cash handed over at the till. */
   amountPaidNow?: Cents
+  /** Cash sale only: tab used to pay part of the sale. */
+  tabId?: string
+  /** How much of the sale to take from the selected tab. */
+  tabApplied?: Cents
+  /** Keep the change on a tab instead of handing cash back. */
+  changeToTab?: boolean
+  /** Create this tab when change is kept and no existing tab was selected. */
+  newTabName?: string
   note?: string
   /** Staff name for the sale. Defaults to "Owner" for legacy callers. */
   cashierName?: string
@@ -72,15 +89,34 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
     throw new Error('Paid now cannot be more than the sale total.')
   }
 
-  if (!isCredit && input.amountTendered !== null && input.amountTendered < subtotal) {
+  // A tab is a tender, not a second credit sale. It can only pay a cash sale,
+  // and only up to the amount actually on the tab. The drawer receives the
+  // remainder; the tab ledger receives the rest of the consideration.
+  const tabId = isCredit ? undefined : input.tabId
+  const requestedTab = isCredit ? 0 : (input.tabApplied ?? 0)
+  if (requestedTab < 0) throw new Error('The tab amount cannot be negative.')
+  if (requestedTab > subtotal) {
+    throw new Error('The tab cannot pay more than the sale total.')
+  }
+  if (requestedTab > 0 && !tabId) {
+    throw new Error('Choose a customer tab before taking money from one.')
+  }
+
+  const cashDue = subtotal - requestedTab
+  if (!isCredit && input.amountTendered !== null && input.amountTendered < cashDue) {
     // The UI blocks this; refuse here too so no path can record a short payment
     // as a fully paid sale.
-    throw new Error(`Cash tendered is short by ${subtotal - input.amountTendered} tambala`)
+    throw new Error(`Cash tendered is short by ${cashDue - input.amountTendered} tambala`)
   }
   const change =
     !isCredit && input.amountTendered !== null
-      ? Math.max(0, input.amountTendered - subtotal)
+      ? Math.max(0, input.amountTendered - cashDue)
       : null
+  const changeKept = !isCredit && input.changeToTab ? (change ?? 0) : 0
+  const newTabName = !isCredit && !tabId ? cleanTabName(input.newTabName ?? '') : ''
+  if (changeKept > 0 && !tabId && !newTabName) {
+    throw new Error('Enter a customer name for the new tab.')
+  }
 
   const date = businessDate()
   // Read before the transaction opens: the label lives in settings, and a
@@ -96,8 +132,40 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
   // the same row count and hand out the same receipt number.
   const sale = await db.transaction(
     'rw',
-    [db.sales, db.saleLines, db.products, db.stockMovements, db.cashMovements, db.outbox],
+    [
+      db.sales,
+      db.saleLines,
+      db.products,
+      db.stockMovements,
+      db.cashMovements,
+      db.customerTabs,
+      db.tabEntries,
+      db.outbox,
+    ],
     async () => {
+      let resolvedTabId = tabId
+
+      // Resolve and validate the tab inside the transaction, where another
+      // device's sync cannot change the balance between the check and the sale.
+      if (resolvedTabId) {
+        const tab = await db.customerTabs.get(resolvedTabId)
+        if (!tab || tab.deletedAt != null) throw new Error('That customer tab no longer exists.')
+        if (requestedTab > 0) {
+          const entries = await db.tabEntries.where('tabId').equals(resolvedTabId).toArray()
+          const available = tabBalance(entries, resolvedTabId)
+          if (requestedTab > available) {
+            throw new Error('That tab does not have enough money on it.')
+          }
+        }
+      }
+
+      if (!resolvedTabId && changeKept > 0 && newTabName) {
+        const createdTab = withSyncMeta(undefined, { name: newTabName }) as CustomerTab
+        await db.customerTabs.put(createdTab)
+        await queueEntity('customer_tabs', createdTab.id, 'upsert', createdTab)
+        resolvedTabId = createdTab.id
+      }
+
       const receiptNo = await nextReceiptNo(date, deviceId, tillLabel)
       const created = withSyncMeta(undefined, {
         receiptNo,
@@ -112,25 +180,72 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
         note: input.note ?? '',
         cashierName,
         customerName: customerName || undefined,
+        tabId: resolvedTabId,
+        tabApplied: requestedTab > 0 ? requestedTab : undefined,
+        tabChangeKept: changeKept > 0 ? changeKept : undefined,
       }) as Sale
 
       await db.sales.put(created)
       await queueEntity('sales', created.id, 'upsert', created)
 
-      // Cash goes into the drawer. The tendered amount and the change cancel
-      // out, so the net gain is always the sale total. On a credit sale only
-      // the deposit goes in now; the rest is collected later.
+      // Cash goes into the drawer. A tab reduces the cash side of the sale; a
+      // change kept on the tab is a separate cash-in movement so the drawer,
+      // the tab and the sale all reconcile without pretending the change was a
+      // sale. On a credit sale only the deposit goes in now.
       if (!isCredit) {
-        const cash = withSyncMeta(undefined, {
-          reason: 'sale' as const,
-          delta: created.total,
-          refId: created.id,
-          businessDate: date,
-          note: `Sale #${receiptNo}`,
-          staffName: cashierName,
-        }) as CashMovement
-        await db.cashMovements.put(cash)
-        await queueEntity('cash_movements', cash.id, 'upsert', cash)
+        if (cashDue > 0) {
+          const cash = withSyncMeta(undefined, {
+            reason: 'sale' as const,
+            delta: cashDue,
+            refId: created.id,
+            businessDate: date,
+            note: `Sale #${receiptNo}${requestedTab > 0 ? ` · tab ${requestedTab}` : ''}`,
+            staffName: cashierName,
+          }) as CashMovement
+          await db.cashMovements.put(cash)
+          await queueEntity('cash_movements', cash.id, 'upsert', cash)
+        }
+
+        if (requestedTab > 0 && resolvedTabId) {
+          const used = withSyncMeta(undefined, {
+            tabId: resolvedTabId,
+            kind: 'sale' as const,
+            amount: -requestedTab,
+            saleId: created.id,
+            cashMovementId: null,
+            businessDate: date,
+            note: `Sale #${receiptNo}`,
+            staffName: cashierName,
+          }) as TabEntry
+          await db.tabEntries.put(used)
+          await queueEntity('tab_entries', used.id, 'upsert', used)
+        }
+
+        if (changeKept > 0 && resolvedTabId) {
+          const keptCash = withSyncMeta(undefined, {
+            reason: 'tab_credit' as const,
+            delta: changeKept,
+            refId: created.id,
+            businessDate: date,
+            note: `Change kept · #${receiptNo}`,
+            staffName: cashierName,
+          }) as CashMovement
+          await db.cashMovements.put(keptCash)
+          await queueEntity('cash_movements', keptCash.id, 'upsert', keptCash)
+
+          const kept = withSyncMeta(undefined, {
+            tabId: resolvedTabId,
+            kind: 'credit' as const,
+            amount: changeKept,
+            saleId: created.id,
+            cashMovementId: keptCash.id,
+            businessDate: date,
+            note: `Change kept · #${receiptNo}`,
+            staffName: cashierName,
+          }) as TabEntry
+          await db.tabEntries.put(kept)
+          await queueEntity('tab_entries', kept.id, 'upsert', kept)
+        }
       } else if (paidNow > 0) {
         const deposit = withSyncMeta(undefined, {
           reason: 'credit_payment' as const,
@@ -215,7 +330,15 @@ export async function commitSale(input: CommitInput): Promise<Sale> {
 export async function voidSale(saleId: string, reason = ''): Promise<void> {
   await db.transaction(
     'rw',
-    [db.sales, db.saleLines, db.products, db.stockMovements, db.cashMovements, db.outbox],
+    [
+      db.sales,
+      db.saleLines,
+      db.products,
+      db.stockMovements,
+      db.cashMovements,
+      db.tabEntries,
+      db.outbox,
+    ],
     async () => {
       const sale = await db.sales.get(saleId)
       if (!sale || sale.status === 'voided') return
@@ -263,13 +386,18 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
       await db.sales.put(updated)
       await queueEntity('sales', saleId, 'upsert', updated)
 
-      // Hand the cash back. A cash sale returns the whole total; a credit sale
-      // returns only what the customer actually paid, because the unpaid part
-      // was never in the drawer. Recorded against the sale's own day so that
-      // day's net figure stays honest; the running drawer balance is unaffected.
+      // Hand the cash back. A cash sale returns what actually went into the
+      // drawer: the total minus any tab tender, plus any change the customer
+      // chose to leave on their tab. A credit sale returns only what the
+      // customer actually paid, because the unpaid part was never in the
+      // drawer. Recorded against the sale's own day so that day's net figure
+      // stays honest; the running drawer balance is unaffected.
       let refund = 0
       if (sale.paymentMethod === 'cash') {
-        refund = sale.total
+        refund =
+          sale.total -
+          (sale.tabApplied ?? 0) +
+          (sale.tabChangeKept ?? 0)
       } else {
         refund = (
           await db.cashMovements.where('refId').equals(saleId).toArray()
@@ -288,6 +416,43 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
         }) as CashMovement
         await db.cashMovements.put(cash)
         await queueEntity('cash_movements', cash.id, 'upsert', cash)
+      }
+
+      // Restore the tab side of the sale. If the customer paid part of the
+      // bill from their tab, the void gives that amount back to the tab; if
+      // they left change on it, the void removes that credit. The cash movement
+      // above already covers the cash leg, so these entries carry no cash.
+      if (sale.tabId) {
+        const tabApplied = sale.tabApplied ?? 0
+        const changeKept = sale.tabChangeKept ?? 0
+        if (tabApplied > 0) {
+          const restore = withSyncMeta(undefined, {
+            tabId: sale.tabId,
+            kind: 'void' as const,
+            amount: tabApplied,
+            saleId,
+            cashMovementId: null,
+            businessDate: sale.businessDate,
+            note: `Void sale #${sale.receiptNo}`,
+            staffName: sale.cashierName || undefined,
+          }) as TabEntry
+          await db.tabEntries.put(restore)
+          await queueEntity('tab_entries', restore.id, 'upsert', restore)
+        }
+        if (changeKept > 0) {
+          const remove = withSyncMeta(undefined, {
+            tabId: sale.tabId,
+            kind: 'void' as const,
+            amount: -changeKept,
+            saleId,
+            cashMovementId: null,
+            businessDate: sale.businessDate,
+            note: `Void sale #${sale.receiptNo}`,
+            staffName: sale.cashierName || undefined,
+          }) as TabEntry
+          await db.tabEntries.put(remove)
+          await queueEntity('tab_entries', remove.id, 'upsert', remove)
+        }
       }
     },
   )

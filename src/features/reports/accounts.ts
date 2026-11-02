@@ -6,6 +6,7 @@ import type {
   SaleLine,
   StockMovement,
   StockReason,
+  TabEntry,
 } from '@/db/types'
 import type { Cents } from '@/domain/money'
 import {
@@ -50,6 +51,8 @@ export const CASH_REASON_LABEL: Record<CashReason, string> = {
   expense: 'Paid out',
   loan_repay: 'Loan repaid',
   credit_payment: 'Credit payment',
+  tab_credit: 'Tab credit (cash in)',
+  tab_payout: 'Tab paid out',
 }
 
 export const STOCK_REASON_LABEL: Record<StockReason, string> = {
@@ -84,7 +87,7 @@ export const ACCOUNT_NAMES: Record<number, string> = {
   [ACCOUNTS.CASH]: 'Cash in drawer',
   [ACCOUNTS.INVENTORY]: 'Stock in the shop',
   [ACCOUNTS.RECEIVABLES]: 'Customers who owe (credit)',
-  [ACCOUNTS.CUSTOMER_CREDITS]: 'Customer credits (cash held for customers)',
+  [ACCOUNTS.CUSTOMER_CREDITS]: 'Customer credits and tabs (cash held for customers)',
   [ACCOUNTS.LOANS]: 'Loans owed',
   [ACCOUNTS.CAPITAL]: 'Owner capital (cash put in)',
   [ACCOUNTS.CONTRIBUTED]: 'Stock brought in',
@@ -131,6 +134,7 @@ export function trialBalances(
   cash: CashMovement[],
   products: Product[],
   stockMoves: StockMovement[],
+  tabEntries: readonly TabEntry[] = [],
 ): { rows: TrialBalanceRow[]; difference: Cents } {
   const byId = new Map(products.map((p) => [p.id, p]))
   const saleById = new Map(sales.map((s) => [s.id, s]))
@@ -141,8 +145,10 @@ export function trialBalances(
     switch (m.reason) {
       case 'sale':
       case 'void':
+      case 'tab_credit':
+      case 'tab_payout':
         // The cash leg only. Revenue and returns are posted from the sale row
-        // below, so a credit sale and a cash sale use one revenue rule.
+        // below; the other side of a tab movement is posted from the tab entry.
         add(ACCOUNTS.CASH, m.delta)
         break
       case 'credit_payment':
@@ -174,6 +180,14 @@ export function trialBalances(
         add(ACCOUNTS.LOANS, -m.delta)
         break
     }
+  }
+
+  // Customer tabs are the mirror of credit: positive entries are money the shop
+  // owes the customer, negative entries reduce that liability when the tab pays
+  // for goods or is handed back as cash. The cash leg, when there is one, was
+  // posted above from its own movement.
+  for (const entry of tabEntries) {
+    add(ACCOUNTS.CUSTOMER_CREDITS, -entry.amount)
   }
 
   // Credit payments collected so far, per sale. The sale row owns revenue and
@@ -310,6 +324,10 @@ export interface CashFlowStatement {
   operatingOut: Cents
   financingIn: Cents
   financingOut: Cents
+  /** Cash left with the shop for customer tabs. */
+  tabIn: Cents
+  /** Cash returned to customers from tabs. */
+  tabOut: Cents
   net: Cents
   /** Opening + net; must equal the drawer balance now. */
   closing: Cents
@@ -346,10 +364,18 @@ export function cashFlow(movements: CashMovement[], dates?: string[]): CashFlowS
   const financingOut = -(
     window.filter((m) => m.reason === 'drawing' || m.reason === 'loan_repay').reduce((s, m) => s + m.delta, 0) || 0
   )
+  const tabIn = window
+    .filter((m) => m.reason === 'tab_credit')
+    .reduce((s, m) => s + m.delta, 0)
+  const tabOut = -(
+    window
+      .filter((m) => m.reason === 'tab_payout')
+      .reduce((s, m) => s + m.delta, 0) || 0
+  )
 
   const allTime = movements.reduce((s, m) => s + m.delta, 0)
   const opening = allTime - window.reduce((s, m) => s + m.delta, 0)
-  const net = salesIn - operatingOut + financingIn - financingOut
+  const net = salesIn - operatingOut + financingIn - financingOut + tabIn - tabOut
 
   return {
     opening,
@@ -357,6 +383,8 @@ export function cashFlow(movements: CashMovement[], dates?: string[]): CashFlowS
     operatingOut,
     financingIn,
     financingOut,
+    tabIn,
+    tabOut,
     net,
     closing: opening + net,
   }
@@ -495,7 +523,8 @@ export interface BalanceSheet {
   loans: Cents
   /**
    * Cash held for customers after an overpayment, a late payment on a voided
-   * sale, or a payment that arrived before its sale. Positive = owed back.
+   * sale, a payment that arrived before its sale, or a customer tab. Positive =
+   * owed back.
    */
   customerCredits: Cents
   /** Net opening float + own money put in, all time. */
@@ -520,6 +549,7 @@ export function balanceSheet(
   stockMoves: StockMovement[],
   sales: Sale[],
   lines: SaleLine[],
+  tabBalance: Cents = 0,
 ): BalanceSheet {
   const byId = new Map(products.map((p) => [p.id, p]))
 
@@ -550,6 +580,7 @@ export function balanceSheet(
     .reduce((s, m) => s + m.delta, 0)
 
   const totalEquity = capitalIn + contributedStock + allTime.netProfit + drawings
+  const customerCredits = credits.total + tabBalance
 
   return {
     cash: cashTotal,
@@ -557,7 +588,7 @@ export function balanceSheet(
     receivables,
     totalAssets: cashTotal + stockValue + receivables,
     loans,
-    customerCredits: credits.total,
+    customerCredits,
     capitalIn,
     contributedStock,
     retainedProfit: allTime.netProfit,
@@ -567,7 +598,7 @@ export function balanceSheet(
       cashTotal +
       stockValue +
       receivables -
-      (loans + credits.total + totalEquity),
+      (loans + customerCredits + totalEquity),
   }
 }
 

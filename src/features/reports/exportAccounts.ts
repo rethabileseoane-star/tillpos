@@ -15,6 +15,7 @@ import {
   effectiveWriteOffAmount,
   writeOffDate,
 } from '@/features/credit/credit'
+import { TAB_KIND_LABEL, buildTabRows, totalTabBalance } from '@/features/tabs/tabs'
 
 /**
  * The rest of the export set: the raw ledgers an accountant can audit and a
@@ -56,7 +57,7 @@ export async function exportCashLedgerCsv(dates?: string[]): Promise<Blob> {
     '',
     `# Movements shown: ${rows.length} of ${all.length} (all time)`,
     `# Cash in drawer now (MWK): ${(all.reduce((s, m) => s + m.delta, 0) / 100).toFixed(2)}`,
-    '# Types: Sale, Credit payment, Void, Opening float, Money in, Bought stock, Owner took, Paid out, Loan repaid',
+    '# Types: Sale, Credit payment, Void, Opening float, Money in, Bought stock, Owner took, Paid out, Loan repaid, Tab credit, Tab payout',
   ].join('\n')
 
   return new Blob([csv + footer], { type: 'text/csv;charset=utf-8' })
@@ -244,6 +245,69 @@ export async function exportCreditJournalCsv(dates: string[]): Promise<Blob> {
 }
 
 /**
+ * Customer tabs as CSV: the current balance for every tab, then every movement
+ * in the window. A positive amount is money the shop owes the customer; a
+ * negative amount is money the customer spent or was paid back.
+ */
+export async function exportCustomerTabsCsv(dates: string[]): Promise<Blob> {
+  const [tabs, entries, sales] = await Promise.all([
+    db.customerTabs.toArray(),
+    db.tabEntries.orderBy('createdAt').toArray(),
+    db.sales.toArray(),
+  ])
+  const tabById = new Map(tabs.map((tab) => [tab.id, tab]))
+  const saleById = new Map(sales.map((sale) => [sale.id, sale]))
+  const inWindow = (d: string) => dates.length === 0 || dates.includes(d)
+  const balances = buildTabRows(tabs, entries)
+
+  const summaryRows = balances.map((row) => ({
+    customer: row.tab.name,
+    phone: row.tab.phone ?? '',
+    balance_mwk: (row.balance / 100).toFixed(2),
+    entries: row.entryCount,
+    note: row.tab.note ?? '',
+  }))
+  const summaryCsv = summaryRows.length
+    ? Papa.unparse(summaryRows, {
+        columns: ['customer', 'phone', 'balance_mwk', 'entries', 'note'],
+      })
+    : '(none)'
+
+  const rows = entries
+    .filter((entry) => inWindow(entry.businessDate))
+    .map((entry) => {
+      const sale = entry.saleId ? saleById.get(entry.saleId) : undefined
+      return {
+        date: entry.businessDate,
+        time: localTime(entry.createdAt),
+        customer: tabById.get(entry.tabId)?.name ?? '',
+        type: TAB_KIND_LABEL[entry.kind],
+        amount_mwk: (entry.amount / 100).toFixed(2),
+        receipt_no: sale?.receiptNo ?? '',
+        note: entry.note,
+        staff: entry.staffName ?? sale?.cashierName ?? '',
+      }
+    })
+  const csv = Papa.unparse(rows, {
+    columns: ['date', 'time', 'customer', 'type', 'amount_mwk', 'receipt_no', 'note', 'staff'],
+  })
+
+  const footer = [
+    '',
+    '# CUSTOMER TABS NOW',
+    summaryCsv
+      .split('\n')
+      .map((l) => `# ${l}`)
+      .join('\n'),
+    `# Total the shop owes on tabs (MWK): ${(totalTabBalance(entries) / 100).toFixed(2)}`,
+    '# Positive amounts are money the shop owes the customer; negative amounts',
+    '# are amounts the customer spent on goods or was paid back in cash.',
+  ].join('\n')
+
+  return new Blob([csv + footer], { type: 'text/csv;charset=utf-8' })
+}
+
+/**
  * One small file with two statements side by side, nothing fancier:
  *  - Income statement for the selected window (sales, cost of goods, expenses,
  *    net profit).
@@ -252,16 +316,24 @@ export async function exportCreditJournalCsv(dates: string[]): Promise<Blob> {
  * The last line is the check: assets minus equity should be zero.
  */
 export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
-  const [cash, products, stockMoves, sales, lines] = await Promise.all([
+  const [cash, products, stockMoves, sales, lines, tabEntries] = await Promise.all([
     db.cashMovements.toArray(),
     db.products.toArray(),
     db.stockMovements.toArray(),
     db.sales.toArray(),
     db.saleLines.toArray(),
+    db.tabEntries.toArray(),
   ])
 
   const stmt = incomeStatement(sales, lines, products, cash, dates, stockMoves)
-  const bs = balanceSheet(cash, products, stockMoves, sales, lines)
+  const bs = balanceSheet(
+    cash,
+    products,
+    stockMoves,
+    sales,
+    lines,
+    totalTabBalance(tabEntries),
+  )
 
   const rows = [
     { item: 'Sales (gross)', amount_mwk: (stmt.revenue / 100).toFixed(2) },
@@ -305,7 +377,7 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     '',
     '# LIABILITIES',
     `# Loans owed (MWK), ${(bs.loans / 100).toFixed(2)}`,
-    `# Customer credits held (MWK), ${(bs.customerCredits / 100).toFixed(2)}`,
+    `# Customer credits and tabs held (MWK), ${(bs.customerCredits / 100).toFixed(2)}`,
     `# Total liabilities (MWK), ${((bs.loans + bs.customerCredits) / 100).toFixed(2)}`,
     '',
     "# OWNER'S EQUITY",

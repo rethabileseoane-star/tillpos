@@ -5,10 +5,12 @@ import { formatMaluti, type Cents } from '@/domain/money'
 import { businessDate } from '@/features/sales/salesService'
 import { summariseCash } from '@/features/cash/cashService'
 import { creditTotals, customerCreditTotals } from '@/features/credit/credit'
+import { buildTabRows, totalTabBalance } from '@/features/tabs/tabs'
 import { exportSalesCsv } from './exportCsv'
 import {
   exportCashLedgerCsv,
   exportCreditJournalCsv,
+  exportCustomerTabsCsv,
   exportStatementsCsv,
   exportStockLedgerCsv,
 } from './exportAccounts'
@@ -59,6 +61,8 @@ export function ReportsScreen() {
   // The debt position needs the whole book; the credit cards are not limited to
   // the report window.
   const allSales = useLiveQuery(() => db.sales.toArray(), []) ?? []
+  const tabs = useLiveQuery(() => db.customerTabs.toArray(), []) ?? []
+  const tabEntries = useLiveQuery(() => db.tabEntries.toArray(), []) ?? []
 
   const report = useMemo(() => buildReport(sales, lines, days), [sales, lines, days])
   const window = useMemo(
@@ -72,6 +76,11 @@ export function ReportsScreen() {
   const customerCredits = useMemo(
     () => customerCreditTotals(allSales, cash).total,
     [allSales, cash],
+  )
+  const tabsOwed = useMemo(() => totalTabBalance(tabEntries), [tabEntries])
+  const openTabs = useMemo(
+    () => buildTabRows(tabs, tabEntries).filter((row) => row.balance > 0).length,
+    [tabs, tabEntries],
   )
 
   // Windows for the exports: the report's dates, plus a timestamp range for the
@@ -92,7 +101,7 @@ export function ReportsScreen() {
     <div className="px-4 py-4">
       <h1 className="text-xl font-bold">Z-Report</h1>
       <p className="text-xs text-slate-400">
-        Cash, sales and credit for the last {days} days
+        Cash, sales, credit and customer tabs for the last {days} days
       </p>
 
       <div className="mt-3 flex gap-2">
@@ -186,6 +195,18 @@ export function ReportsScreen() {
             {formatMaluti(Math.abs(window.loanRepay))}
           </p>
         </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Tab cash in ({days}d)</p>
+          <p className="font-mono text-lg font-semibold text-sky-300">
+            {formatMaluti(window.tabCredits)}
+          </p>
+        </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Tab cash out ({days}d)</p>
+          <p className="font-mono text-lg font-semibold text-amber-400">
+            {formatMaluti(Math.abs(window.tabPayouts))}
+          </p>
+        </div>
       </div>
 
       <div className="mt-3 rounded-xl border border-ink-700 bg-ink-800/60 px-4 py-3 text-xs leading-relaxed text-slate-400">
@@ -248,6 +269,13 @@ export function ReportsScreen() {
           <p className="font-mono text-xl font-semibold text-rose-300">
             {formatMaluti(credit.writtenOff)}
           </p>
+        </div>
+        <div className="card">
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Shop owes on tabs (now)</p>
+          <p className="font-mono text-xl font-semibold text-sky-300">
+            {formatMaluti(tabsOwed)}
+          </p>
+          <p className="text-[10px] text-slate-500">{openTabs} with a balance</p>
         </div>
         {customerCredits !== 0 && (
           <div className="card">
@@ -366,8 +394,9 @@ export function ReportsScreen() {
             </svg>
           </span>
           <span className="mt-0.5 block text-[11px] text-slate-400">
-            Sales · credit sales · receipts · credit receipts · payments · bad
-            debts · trial balance · P&L · cash flow · balance sheet · inventory
+            Sales · credit sales · customer tabs · tab transactions · receipts ·
+            credit receipts · payments · bad debts · trial balance · P&L · cash
+            flow · balance sheet · inventory
           </span>
         </button>
       </div>
@@ -400,6 +429,13 @@ export function ReportsScreen() {
           sub="Credit sales, collections and bad debts"
           onTap={() =>
             exportFile(exportCreditJournalCsv(rangeDates), `credit-${range}.csv`)
+          }
+        />
+        <ExportButton
+          label="Customer tabs"
+          sub="Money the shop owes, and every tab movement"
+          onTap={() =>
+            exportFile(exportCustomerTabsCsv(rangeDates), `customer-tabs-${range}.csv`)
           }
         />
         <ExportButton

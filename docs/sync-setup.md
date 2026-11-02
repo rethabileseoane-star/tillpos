@@ -72,7 +72,7 @@ project.
    paste it into the editor.
 3. Click **Run**. You should see "Success. No rows returned".
 
-This creates the six tables, the sync sequence, the access rules and the
+This creates the eight tables, the sync sequence, the access rules and the
 per-shop keys. It is safe to run again later.
 
 **Credit-sale upgrade:** the same script adds the credit columns to `sales`
@@ -83,10 +83,17 @@ that names a column the table does not have, so a new build syncing against the
 old schema would park its changes in the outbox until the upgrade runs. Existing
 rows get safe defaults, and re-running the script changes nothing.
 
+**Customer-tab upgrade:** the same script now also adds `customer_tabs` and
+`tab_entries`, plus `tabId`, `tabApplied` and `tabChangeKept` on `sales`. Run it
+**before** installing the build that supports tabs, for the same reason: a row
+that names a missing column is refused by PostgREST. Existing rows get safe
+defaults, and re-running the script changes nothing.
+
 If you prefer the smallest possible change, run `supabase/credit-upgrade.sql`
-instead of the whole schema. It contains the same seven `alter table ... add
-column if not exists` statements and a verification query that should list seven
-rows.
+for credit or `supabase/tabs-upgrade.sql` for tabs instead of the whole schema.
+The tab script creates the two tables, adds the three sales columns, adds the
+indexes, triggers, RLS and grants, and ends with a verification query that
+should list the three new sales columns and the two new tables.
 
 **Upgrading an existing single-shop project:** running the updated schema adds
 the `shopId` column to every existing row and backfills it to `shop-a`. Existing

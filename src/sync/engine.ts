@@ -298,6 +298,8 @@ export async function refreshSyncStatus(): Promise<void> {
 /** Every local row of one entity, as it would be sent to the cloud. */
 async function rowsFor(entity: SyncEntity): Promise<RemoteRow[]> {
   switch (entity) {
+    case 'customer_tabs':
+      return (await db.customerTabs.toArray()) as unknown as RemoteRow[]
     case 'products':
       return (await db.products.toArray()) as unknown as RemoteRow[]
     case 'sales':
@@ -308,6 +310,8 @@ async function rowsFor(entity: SyncEntity): Promise<RemoteRow[]> {
       return (await db.stockMovements.toArray()) as unknown as RemoteRow[]
     case 'cash_movements':
       return (await db.cashMovements.toArray()) as unknown as RemoteRow[]
+    case 'tab_entries':
+      return (await db.tabEntries.toArray()) as unknown as RemoteRow[]
     case 'settings': {
       const rows = await db.settings.toArray()
       return rows.filter((row) => isSharedSettingKey(row.key)) as unknown as RemoteRow[]

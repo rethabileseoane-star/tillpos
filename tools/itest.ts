@@ -32,6 +32,7 @@ import { exportSalesCsv } from '../src/features/reports/exportCsv'
 import {
   exportCashLedgerCsv,
   exportCreditJournalCsv,
+  exportCustomerTabsCsv,
   exportStatementsCsv,
   exportStockLedgerCsv,
 } from '../src/features/reports/exportAccounts'
@@ -64,6 +65,17 @@ import {
 } from '../src/features/security/staff'
 import { addShop } from '../src/features/shops/shopManager'
 import { recordCreditPayment, writeOffCreditSale } from '../src/features/credit/creditService'
+import {
+  createTab,
+  getTabBalance,
+  recordTabCredit,
+  recordTabPayout,
+} from '../src/features/tabs/tabService'
+import {
+  buildTabRows,
+  tabBalanceMap,
+  totalTabBalance,
+} from '../src/features/tabs/tabs'
 import {
   creditBalance,
   creditPaidMap,
@@ -109,6 +121,8 @@ async function reset() {
     db.saleLines,
     db.stockMovements,
     db.cashMovements,
+    db.customerTabs,
+    db.tabEntries,
     db.outbox,
     db.settings,
     async () => {
@@ -118,6 +132,8 @@ async function reset() {
         db.saleLines.clear(),
         db.stockMovements.clear(),
         db.cashMovements.clear(),
+        db.customerTabs.clear(),
+        db.tabEntries.clear(),
         db.outbox.clear(),
         db.settings.clear(),
       ])
@@ -1285,7 +1301,7 @@ async function main() {
     assert.match(text, /# Retained profit, all time \(MWK\), 900\.00/)
     assert.match(text, /# Owner took \(MWK\), -3000\.00/)
     assert.match(text, /# Loans owed \(MWK\), 0\.00/)
-    assert.match(text, /# Customer credits held \(MWK\), 0\.00/)
+    assert.match(text, /# Customer credits and tabs held \(MWK\), 0\.00/)
     assert.match(text, /# CHECK - assets minus \(liabilities \+ equity\) \(MWK\), 0\.00/)
   })
 
@@ -1352,7 +1368,7 @@ async function main() {
     await bookUp()
     const data = await loadBooksData()
     const tables = buildBookPack(data, [businessDate()])
-    assert.equal(tables.length, 11)
+    assert.equal(tables.length, 13)
 
     // Sales journal: one row per sale line.
     const journal = tables[0]!
@@ -1369,31 +1385,31 @@ async function main() {
     assert.match(journal.notes[0]!, /Total of 2 lines \(M\): 19,000\.00/)
 
     // Receipts: float + money in + two sales, ending on the drawer figure.
-    const receipts = tables[2]!
+    const receipts = tables[4]!
     assert.equal(receipts.rows.length, 4)
     assert.match(receipts.rows[3]!.join(','), /16,500\.00/)
 
     // Payments: the depot purchase, the wage, and the banking.
-    const payments = tables[4]!
+    const payments = tables[6]!
     assert.equal(payments.rows.length, 3)
     assert.match(payments.rows.join(','), /Corner depot,14,000\.00/)
     assert.match(payments.notes.join(','), /Owner took \(M\): 3,000\.00/)
     assert.match(payments.notes.join(','), /Total paid out \(M\): 17,500\.00/)
 
     // Trial balance: debits equal credits to the tambala.
-    const tb = tables[6]!
+    const tb = tables[8]!
     const total = tb.rows[tb.rows.length - 1]!
     assert.deepEqual(total, ['', 'TOTAL', '162,000.00', '162,000.00'])
     assert.match(tb.notes[0]!, /books balance/)
 
     // P&L and cash flow.
-    const pnl = tables[7]!
+    const pnl = tables[9]!
     assert.match(pnl.rows.map((r) => r.join(',')).join('\n'), /NET PROFIT,900\.00/)
-    const cf = tables[8]!
+    const cf = tables[10]!
     assert.match(cf.rows.map((r) => r.join(',')).join('\n'), /CASH IN THE DRAWER AT THE END,16,500\.00/)
 
     // Balance sheet: assets equal liabilities + equity.
-    const bs = tables[9]!
+    const bs = tables[11]!
     const bsText = bs.rows.map((r) => r.join(',')).join('\n')
     assert.match(bsText, /TOTAL ASSETS,140,900\.00/)
     assert.match(bsText, /Loans owed,0\.00/)
@@ -1401,7 +1417,7 @@ async function main() {
     assert.match(bs.notes[0]!, /agree with the tin and the shelf/)
 
     // Inventory: movements plus the shelf, worth M124,400 now.
-    const inv = tables[10]!
+    const inv = tables[12]!
     assert.match(inv.rows.join(','), /Sugar 1kg,NOW|NOW,Sugar 1kg/)
     assert.match(inv.notes[0]!, /Stock in the shop now is worth \(M\): 124,400\.00/)
   })
@@ -1423,14 +1439,14 @@ async function main() {
     assert.equal(await cashBalance(), 0, 'refund brought the drawer back to zero')
 
     // Receipts: the sale goes in, the void comes straight back out.
-    const receipts = tables[2]!
+    const receipts = tables[4]!
     assert.equal(receipts.rows.length, 2)
     assert.match(receipts.rows[0]!.join(','), /3,000\.00,,3,000\.00$/, 'sale in, running balance 3,000')
     assert.match(receipts.rows[1]!.join(','), /0\.00,3,000\.00,0\.00$/, 'refund out, running balance 0')
 
     // P&L: gross revenue and the refund cancel; no cost books because the
     // sale was never completed.
-    const pnl = tables[7]!
+    const pnl = tables[9]!
     const pnlText = pnl.rows.map((r) => r.join(',')).join('\n')
     assert.match(pnlText, /Sales \(gross, before refunds\),3,000\.00/)
     assert.match(pnlText, /Less: refunds \(voided sales\),-3,000\.00/)
@@ -1438,7 +1454,7 @@ async function main() {
     assert.match(pnlText, /NET PROFIT,0\.00/)
 
     // Cash flow: nothing came in and nothing went out when the dust settles.
-    const cf = tables[8]!
+    const cf = tables[10]!
     const cfText = cf.rows.map((r) => r.join(',')).join('\n')
     assert.match(cfText, /NET CHANGE IN CASH,0\.00/)
     assert.match(cfText, /CASH IN THE DRAWER AT THE END,0\.00/)
@@ -1475,6 +1491,205 @@ async function main() {
     const raw = buf.toString('latin1')
     assert.ok(raw.includes('Product Catalog'), 'catalog heading missing')
     assert.ok(raw.includes('TOTALS'), 'catalog totals row missing')
+  })
+
+  console.log('customer tabs')
+
+  await check('a tab holds cash and pays it out, and the drawer follows', async () => {
+    await reset()
+    const tab = await createTab({ name: 'Mama Chikondi', phone: '088 111 2222' })
+    const credit = await recordTabCredit({
+      tabId: tab.id,
+      amount: 500000,
+      note: 'Change kept',
+      staffName: 'Cashier A',
+    })
+    assert.equal(await getTabBalance(tab.id), 500000)
+    assert.equal(totalTabBalance(await db.tabEntries.toArray()), 500000)
+
+    const cashIn = await db.cashMovements.toArray()
+    assert.equal(cashIn.length, 1)
+    assert.equal(cashIn[0]!.reason, 'tab_credit')
+    assert.equal(cashIn[0]!.delta, 500000)
+    assert.equal(cashIn[0]!.refId, credit.id, 'tab credit cash is not linked to its entry')
+    assert.equal(await cashBalance(), 500000)
+
+    const payout = await recordTabPayout({
+      tabId: tab.id,
+      amount: 200000,
+      note: 'Customer took cash',
+    })
+    assert.equal(payout.amount, -200000)
+    assert.equal(await getTabBalance(tab.id), 300000)
+    assert.equal(await cashBalance(), 300000)
+
+    await assert.rejects(
+      recordTabPayout({ tabId: tab.id, amount: 300001 }),
+      /Only M3,000 is on that tab/,
+    )
+    assert.equal(await getTabBalance(tab.id), 300000, 'an over-payout changed the tab')
+    assert.equal(await cashBalance(), 300000, 'an over-payout changed the drawer')
+
+    const summary = summariseCash(await db.cashMovements.toArray())
+    assert.equal(summary.tabCredits, 500000)
+    assert.equal(summary.tabPayouts, -200000)
+
+    const rows = buildTabRows(
+      await db.customerTabs.toArray(),
+      await db.tabEntries.toArray(),
+    )
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0]!.balance, 300000)
+    assert.equal(rows[0]!.entryCount, 2)
+    assert.equal(rows[0]!.tab.phone, '088 111 2222')
+
+    const queued = await db.outbox.toArray()
+    assert.ok(queued.some((row) => row.entity === 'customer_tabs'))
+    assert.ok(queued.some((row) => row.entity === 'tab_entries'))
+  })
+
+  await check('a sale can use a tab and leave change on it', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const tab = await createTab({ name: 'Mrs Banda' })
+    await recordTabCredit({ tabId: tab.id, amount: 1000000 })
+
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 4)], // M6,000
+      paymentMethod: 'cash',
+      amountTendered: 500000, // M5,000 handed over
+      tabId: tab.id,
+      tabApplied: 400000, // M4,000 from the tab
+      changeToTab: true, // M3,000 change stays on the tab
+      cashierName: 'Cashier A',
+    })
+
+    assert.equal(sale.total, 600000)
+    assert.equal(sale.tabId, tab.id)
+    assert.equal(sale.tabApplied, 400000)
+    assert.equal(sale.change, 300000)
+    assert.equal(sale.tabChangeKept, 300000)
+    assert.equal(await getTabBalance(tab.id), 900000)
+
+    // The drawer receives the cash part of the sale plus the change kept, which
+    // is exactly the M5,000 the customer handed over.
+    assert.equal(await cashBalance(), 1500000)
+    const cash = await db.cashMovements.toArray()
+    const saleMove = cash.find(
+      (row) => row.refId === sale.id && row.reason === 'sale',
+    )!
+    const keptMove = cash.find(
+      (row) => row.refId === sale.id && row.reason === 'tab_credit',
+    )!
+    assert.equal(saleMove.delta, 200000, 'sale cash should be the cash due')
+    assert.equal(keptMove.delta, 300000, 'kept change was not added to the drawer')
+
+    const entries = await db.tabEntries.where('tabId').equals(tab.id).toArray()
+    assert.equal(entries.filter((entry) => entry.kind === 'sale')[0]!.amount, -400000)
+    assert.ok(
+      entries.some((entry) => entry.kind === 'credit' && entry.amount === 300000),
+      'kept change was not written to the tab',
+    )
+
+    const data = await loadBooksData()
+    const tb = trialBalances(
+      data.sales,
+      data.lines,
+      data.cash,
+      data.products,
+      data.stockMoves,
+      data.tabEntries,
+    )
+    assert.equal(tb.difference, 0, 'tab movements unbalanced the trial balance')
+    const bs = balanceSheet(
+      data.cash,
+      data.products,
+      data.stockMoves,
+      data.sales,
+      data.lines,
+      totalTabBalance(data.tabEntries),
+    )
+    assert.equal(bs.customerCredits, 900000)
+    assert.equal(bs.check, 0, 'tab liability is missing from the balance sheet')
+
+    const pack = buildBookPack(data, [businessDate()])
+    assert.ok(pack.some((table) => table.title === 'Customer tabs'))
+    assert.ok(pack.some((table) => table.title === 'Customer tab transactions'))
+    const tabTable = pack.find((table) => table.title === 'Customer tabs')!
+    assert.match(tabTable.rows.map((row) => row.join(',')).join('\n'), /Mrs Banda/)
+    const tabJournal = pack.find((table) => table.title === 'Customer tab transactions')!
+    assert.match(tabJournal.notes.join(','), /Balance the shop owes on tabs now \(M\): 9,000\.00/)
+
+    const tabCsv = await (await exportCustomerTabsCsv([businessDate()])).text()
+    assert.match(tabCsv, /Mrs Banda/)
+    assert.match(tabCsv, /Change kept/)
+    assert.match(tabCsv, /Total the shop owes on tabs \(MWK\): 9000\.00/)
+
+    await voidSale(sale.id, 'Customer changed their mind')
+
+    // The void gives the tab back what it spent and removes the change it
+    // kept; the drawer hands back the whole M5,000 the customer gave.
+    assert.equal(await getTabBalance(tab.id), 1000000)
+    assert.equal(await cashBalance(), 1000000)
+    const refund = (await db.cashMovements.toArray()).find(
+      (row) => row.refId === sale.id && row.reason === 'void',
+    )!
+    assert.equal(refund.delta, -500000)
+    const reversed = await db.tabEntries.where('tabId').equals(tab.id).toArray()
+    assert.equal(reversed.filter((entry) => entry.kind === 'void').length, 2)
+
+    const after = await loadBooksData()
+    const tbAfter = trialBalances(
+      after.sales,
+      after.lines,
+      after.cash,
+      after.products,
+      after.stockMoves,
+      after.tabEntries,
+    )
+    assert.equal(tbAfter.difference, 0, 'voiding a tab sale unbalanced the books')
+    const bsAfter = balanceSheet(
+      after.cash,
+      after.products,
+      after.stockMoves,
+      after.sales,
+      after.lines,
+      totalTabBalance(after.tabEntries),
+    )
+    assert.equal(bsAfter.customerCredits, 1000000)
+    assert.equal(bsAfter.check, 0)
+  })
+
+  await check('keeping change with no existing tab creates one', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 2)], // M3,000
+      paymentMethod: 'cash',
+      amountTendered: 500000, // M5,000
+      changeToTab: true,
+      newTabName: '  Change   jar  ',
+    })
+    assert.ok(sale.tabId, 'the sale did not get a tab')
+    const tab = (await db.customerTabs.get(sale.tabId!))!
+    assert.equal(tab.name, 'Change jar')
+    assert.equal(sale.tabChangeKept, 200000)
+    assert.equal(await getTabBalance(tab.id), 200000)
+    assert.equal(await cashBalance(), 500000)
+
+    const balances = tabBalanceMap(await db.tabEntries.toArray())
+    assert.equal(balances.get(tab.id), 200000)
+
+    await assert.rejects(
+      commitSale({
+        lines: [await lineFor('6001234567892', 1)],
+        paymentMethod: 'cash',
+        amountTendered: 300000,
+        changeToTab: true,
+        newTabName: '   ',
+      }),
+      /customer name/,
+    )
   })
 
   console.log('sync config')
@@ -1625,6 +1840,46 @@ async function main() {
     assert.equal(applied, true)
     assert.equal((await db.products.get('p1'))!.name, 'Remote sugar')
     assert.equal(await db.outbox.count(), 0, 'a pulled row was queued straight back to the server')
+  })
+
+  await check('pulled customer tabs and tab entries land in their tables', async () => {
+    await reset()
+    const meta = {
+      createdAt: 1,
+      updatedAt: 1,
+      deletedAt: null,
+      rev: 1,
+      deviceId: 'd',
+      shopId: 'shop-a',
+    }
+    assert.equal(
+      await applyRemoteRow('customer_tabs', {
+        ...meta,
+        id: 'tab-remote',
+        name: 'Remote tab',
+        phone: '',
+        note: '',
+      }),
+      true,
+    )
+    assert.equal(
+      await applyRemoteRow('tab_entries', {
+        ...meta,
+        id: 'entry-remote',
+        tabId: 'tab-remote',
+        kind: 'credit',
+        amount: 5000,
+        saleId: null,
+        cashMovementId: null,
+        businessDate: '2026-10-12',
+        note: '',
+        staffName: '',
+      }),
+      true,
+    )
+    assert.equal((await db.customerTabs.get('tab-remote'))!.name, 'Remote tab')
+    assert.equal(await getTabBalance('tab-remote'), 5000)
+    assert.equal(await db.outbox.count(), 0, 'a pulled tab row was queued back')
   })
 
   await check('a pull applies the newest product edit over an older local one', async () => {
@@ -1921,6 +2176,8 @@ async function main() {
       anonKey: 'anon',
       email: 'shop@example.com',
     })
+    const tab = await createTab({ name: 'Mama Backup', phone: '088 000 1111' })
+    await recordTabCredit({ tabId: tab.id, amount: 250000, note: 'Held for Monday' })
     await db.outbox.add({
       entity: 'settings',
       entityId: 'security.staff',
@@ -1933,6 +2190,9 @@ async function main() {
 
     const backup = await buildBackup()
     assert.equal(backup.tables.products.length, 3, 'products missing from the backup')
+    assert.equal(backup.tables.customerTabs.length, 1, 'customer tabs missing from the backup')
+    assert.equal(backup.tables.tabEntries.length, 1, 'tab entries missing from the backup')
+    assert.equal(backup.tables.customerTabs[0]!.name, 'Mama Backup')
     const keys = backup.tables.settings.map((s) => s.key)
     assert.ok(keys.includes('report.shopName'), 'business settings were dropped')
     assert.ok(!keys.includes('sync.config'), 'the sync token was included')

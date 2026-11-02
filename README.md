@@ -1,9 +1,9 @@
 # Till POS
 
 Offline-first barcode point-of-sale for a shop's till and, when needed, several
-tills and several shops on one phone. Scan with the phone camera, take cash or
-customer credit, stock comes down, and the Z-report balances at the end of the
-day. Works with the network off.
+tills and several shops on one phone. Scan with the phone camera, take cash,
+customer credit or a customer tab, stock comes down, and the Z-report balances
+at the end of the day. Works with the network off.
 
 ## Running it
 
@@ -138,13 +138,14 @@ The only cloud accounts are the per-shop sync logins.
   Settings. The owner must use a password of at least 8 characters, not a
   4-digit PIN. If an existing lock uses a PIN, the Staff card asks the owner to
   replace it before a cashier can be added.
-- A **cashier** sees Sell, Catalog and History. They can sell, including ad-hoc
-  items with just a name and price, and browse the catalog read-only. Their
-  History is today only and hides every price, total, cost, profit, cash figure
-  and export. They can still work the **credit book**: take a payment against
-  any outstanding debt, or write one off, because that is counter work rather
-  than a revenue report. Money, Z-Report, Settings, stock adjustment,
-  import/export and voids stay with the owner.
+- A **cashier** sees Sell, Catalog, History and Tabs. They can sell, including
+  ad-hoc items with just a name and price, browse the catalog read-only, and
+  work the customer-tab screen. Their History is today only and hides every
+  price, total, cost, profit, cash figure and export. They can still work the
+  **credit book**: take a payment against any outstanding debt, or write one
+  off, because that is counter work rather than a revenue report. Money,
+  Z-Report, Settings, stock adjustment, import/export and voids stay with the
+  owner.
 - Each person gets their own name on the lock screen and their own 4–8 digit PIN
   or password. Every completed sale is stamped with that name, shown in History
   and carried in the sales CSV and books sales journal. Owner History can be
@@ -227,6 +228,17 @@ A written-off sale cannot be voided. The trial balance, P&L, cash flow and
 balance sheet read the same rows, so the sales journal, credit book and drawer
 stay tied together.
 
+**A customer tab is the mirror of credit.** It records money the shop owes the
+customer, not money the customer owes the shop. The usual case is change kept
+when the drawer cannot break a note, but a customer can also leave cash on a tab
+and spend it down later. Tabs are an append-only ledger: a positive entry adds
+what the shop owes, and a negative entry is a purchase at the till or cash paid
+back. At checkout a tab can pay part of a cash sale, and the change can be left
+on an existing tab or a new one. Tab cash movements are `tab_credit` and
+`tab_payout`, so the drawer, trial balance, balance sheet and tab screen all
+reconcile. A tab balance is a liability (account 2400), separate from a credit
+sale's receivable.
+
 **Stock is a sum, not a number.** Every change is a row in `stock_movements`
 (`sale`, `void`, `import`, `adjust`, `opening`). `products.stockQty` is only a
 cache, rebuilt from the ledger on boot and available on demand from Settings.
@@ -294,8 +306,9 @@ src/
     sell/       camera view, cart panel, cash and credit checkout, ad-hoc capture
     sales/      sale commit, void, stock adjustment
     credit/     credit balances, payments and write-offs
+    tabs/       customer tabs: money the shop owes customers
     history/    per-day sales, credit book, payments and write-offs
-    reports/    Z-report, credit journal and CSV/PDF export
+    reports/    Z-report, credit/tab journals and CSV/PDF export
     settings/   device info, storage, cloud sync, receipt label, shops
     security/   staff roster, app lock, WebAuthn, recovery backup
   shops/        shop registry and per-shop database selection

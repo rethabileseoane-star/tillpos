@@ -89,6 +89,9 @@ create table if not exists sales (
   "paymentMethod" text not null default 'cash',
   "amountTendered" bigint,
   change          bigint,
+  "tabId"         text,
+  "tabApplied"    bigint,
+  "tabChangeKept" bigint,
   status          text not null default 'completed',
   "voidedAt"      bigint,
   note            text not null default '',
@@ -170,6 +173,46 @@ create table if not exists cash_movements (
   primary key ("shopId", id)
 );
 
+-- Customer tabs are the mirror of customer credit: the shop owes the customer,
+-- usually because there was no change for a cash payment. The tab row is the
+-- customer identity; every balance movement is an append-only tab_entries row.
+create table if not exists customer_tabs (
+  "shopId"      text not null,
+  id            text not null,
+  name          text not null,
+  phone         text not null default '',
+  note          text not null default '',
+  "createdAt"   bigint not null,
+  "updatedAt"   bigint not null,
+  "deletedAt"   bigint,
+  rev           integer not null default 1,
+  "deviceId"    text not null,
+  "serverSeq"   bigint not null default nextval('till_seq'),
+  "serverUpdatedAt" timestamptz not null default now(),
+  primary key ("shopId", id)
+);
+
+create table if not exists tab_entries (
+  "shopId"        text not null,
+  id              text not null,
+  "tabId"         text not null,
+  kind            text not null default 'credit',
+  amount          bigint not null default 0,
+  "saleId"        text,
+  "cashMovementId" text,
+  "businessDate"  date not null,
+  note            text not null default '',
+  "staffName"     text not null default '',
+  "createdAt"     bigint not null,
+  "updatedAt"     bigint not null,
+  "deletedAt"     bigint,
+  rev             integer not null default 1,
+  "deviceId"      text not null,
+  "serverSeq"     bigint not null default nextval('till_seq'),
+  "serverUpdatedAt" timestamptz not null default now(),
+  primary key ("shopId", id)
+);
+
 -- Only shop-wide settings are ever written here (currently the shop name used
 -- on report headers). The app lock and a device's own session bookkeeping are
 -- never sent, so there is no row for them to leak from.
@@ -206,6 +249,8 @@ alter table sales           add column if not exists "shopId" text not null defa
 alter table sale_lines      add column if not exists "shopId" text not null default 'shop-a';
 alter table stock_movements add column if not exists "shopId" text not null default 'shop-a';
 alter table cash_movements  add column if not exists "shopId" text not null default 'shop-a';
+alter table customer_tabs   add column if not exists "shopId" text not null default 'shop-a';
+alter table tab_entries     add column if not exists "shopId" text not null default 'shop-a';
 alter table settings        add column if not exists "shopId" text not null default 'shop-a';
 
 update products        set "shopId" = 'shop-a' where "shopId" is null;
@@ -213,6 +258,8 @@ update sales           set "shopId" = 'shop-a' where "shopId" is null;
 update sale_lines      set "shopId" = 'shop-a' where "shopId" is null;
 update stock_movements set "shopId" = 'shop-a' where "shopId" is null;
 update cash_movements  set "shopId" = 'shop-a' where "shopId" is null;
+update customer_tabs   set "shopId" = 'shop-a' where "shopId" is null;
+update tab_entries     set "shopId" = 'shop-a' where "shopId" is null;
 update settings        set "shopId" = 'shop-a' where "shopId" is null;
 
 alter table products        alter column "shopId" set not null;
@@ -220,6 +267,8 @@ alter table sales           alter column "shopId" set not null;
 alter table sale_lines      alter column "shopId" set not null;
 alter table stock_movements alter column "shopId" set not null;
 alter table cash_movements  alter column "shopId" set not null;
+alter table customer_tabs   alter column "shopId" set not null;
+alter table tab_entries     alter column "shopId" set not null;
 alter table settings        alter column "shopId" set not null;
 
 alter table products        alter column "shopId" drop default;
@@ -227,6 +276,8 @@ alter table sales           alter column "shopId" drop default;
 alter table sale_lines      alter column "shopId" drop default;
 alter table stock_movements alter column "shopId" drop default;
 alter table cash_movements  alter column "shopId" drop default;
+alter table customer_tabs   alter column "shopId" drop default;
+alter table tab_entries     alter column "shopId" drop default;
 alter table settings        alter column "shopId" drop default;
 
 -- The old tables keyed every row by id alone. Re-key them per shop. The old
@@ -269,6 +320,12 @@ alter table sales add column if not exists "writeOffReason" text not null defaul
 alter table sales add column if not exists "writtenOffBy" text not null default '';
 alter table cash_movements add column if not exists "staffName" text not null default '';
 
+-- Customer-tab fields on a cash sale. Additive so an older build can still
+-- upsert a plain cash sale without knowing about tabs.
+alter table sales add column if not exists "tabId" text;
+alter table sales add column if not exists "tabApplied" bigint;
+alter table sales add column if not exists "tabChangeKept" bigint;
+
 -- ---------------------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------------------
@@ -307,6 +364,18 @@ create index if not exists cash_movements_shop_date_idx
 create index if not exists cash_movements_shop_seq_idx
   on cash_movements ("shopId", "serverSeq");
 
+create index if not exists customer_tabs_shop_name_idx
+  on customer_tabs ("shopId", name);
+create index if not exists customer_tabs_shop_seq_idx
+  on customer_tabs ("shopId", "serverSeq");
+
+create index if not exists tab_entries_shop_tab_idx
+  on tab_entries ("shopId", "tabId");
+create index if not exists tab_entries_shop_date_idx
+  on tab_entries ("shopId", "businessDate");
+create index if not exists tab_entries_shop_seq_idx
+  on tab_entries ("shopId", "serverSeq");
+
 drop index if exists settings_key_idx;
 drop index if exists settings_seq_idx;
 create unique index if not exists settings_shop_key_idx on settings ("shopId", key);
@@ -336,6 +405,14 @@ drop trigger if exists cash_movements_touch on cash_movements;
 create trigger cash_movements_touch before insert or update on cash_movements
   for each row execute function public.till_touch();
 
+drop trigger if exists customer_tabs_touch on customer_tabs;
+create trigger customer_tabs_touch before insert or update on customer_tabs
+  for each row execute function public.till_touch();
+
+drop trigger if exists tab_entries_touch on tab_entries;
+create trigger tab_entries_touch before insert or update on tab_entries
+  for each row execute function public.till_touch();
+
 drop trigger if exists settings_touch on settings;
 create trigger settings_touch before insert or update on settings
   for each row execute function public.till_touch();
@@ -353,6 +430,8 @@ alter table sales           enable row level security;
 alter table sale_lines      enable row level security;
 alter table stock_movements enable row level security;
 alter table cash_movements  enable row level security;
+alter table customer_tabs   enable row level security;
+alter table tab_entries     enable row level security;
 alter table settings        enable row level security;
 
 drop policy if exists "shop members" on products;
@@ -390,6 +469,20 @@ create policy "shop rows" on cash_movements
   using ("shopId" = (select public.till_shop_id()))
   with check ("shopId" = (select public.till_shop_id()));
 
+drop policy if exists "shop members" on customer_tabs;
+drop policy if exists "shop rows" on customer_tabs;
+create policy "shop rows" on customer_tabs
+  for all to authenticated
+  using ("shopId" = (select public.till_shop_id()))
+  with check ("shopId" = (select public.till_shop_id()));
+
+drop policy if exists "shop members" on tab_entries;
+drop policy if exists "shop rows" on tab_entries;
+create policy "shop rows" on tab_entries
+  for all to authenticated
+  using ("shopId" = (select public.till_shop_id()))
+  with check ("shopId" = (select public.till_shop_id()));
+
 drop policy if exists "shop members" on settings;
 drop policy if exists "shop rows" on settings;
 create policy "shop rows" on settings
@@ -405,10 +498,12 @@ create policy "shop rows" on settings
 -- reached at all. The app is always authenticated. Anonymous requests get
 -- nothing, and the public schema does not need the tables exposed to anon.
 
-revoke all on table products, sales, sale_lines, stock_movements, cash_movements, settings
+revoke all on table products, sales, sale_lines, stock_movements, cash_movements,
+  customer_tabs, tab_entries, settings
   from anon, authenticated, service_role;
 grant select, insert, update, delete on table
-  products, sales, sale_lines, stock_movements, cash_movements, settings
+  products, sales, sale_lines, stock_movements, cash_movements,
+  customer_tabs, tab_entries, settings
   to authenticated, service_role;
 
 revoke all on sequence public.till_seq from public, anon;

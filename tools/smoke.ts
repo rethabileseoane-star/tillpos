@@ -33,13 +33,23 @@ import {
 import type {
   CashMovement,
   CashReason,
+  CustomerTab,
   Product,
   Sale,
   SaleLine,
   StockMovement,
   StockReason,
+  TabEntry,
+  TabEntryKind,
 } from '../src/db/types'
 import { ACCOUNTS, balanceSheet, cashFlow, incomeStatement, outstandingReceivables, trialBalances } from '../src/features/reports/accounts'
+import {
+  buildTabRows,
+  cleanTabName,
+  tabBalance,
+  tabBalanceMap,
+  totalTabBalance,
+} from '../src/features/tabs/tabs'
 import {
   creditBalance,
   creditPaidMap,
@@ -336,6 +346,43 @@ const mkStock = (
   deletedAt: null,
   rev: 1,
   deviceId: 'd',
+})
+
+const mkTab = (
+  id: string,
+  name: string,
+  over: Partial<CustomerTab> = {},
+): CustomerTab => ({
+  id,
+  name,
+  createdAt: 1,
+  updatedAt: 1,
+  deletedAt: null,
+  rev: 1,
+  deviceId: 'd',
+  ...over,
+})
+const mkTabEntry = (
+  id: string,
+  tabId: string,
+  kind: TabEntryKind,
+  amount: number,
+  over: Partial<TabEntry> = {},
+): TabEntry => ({
+  id,
+  tabId,
+  kind,
+  amount,
+  saleId: null,
+  cashMovementId: null,
+  businessDate: '2026-10-12',
+  note: '',
+  createdAt: 1,
+  updatedAt: 1,
+  deletedAt: null,
+  rev: 1,
+  deviceId: 'd',
+  ...over,
 })
 
 const P = {
@@ -944,6 +991,73 @@ check('credit totals use the right day for sales, payments and write-offs', () =
   assert.equal(writeDay.debtorCount, 1, 'the written-off sale no longer owes anything')
 })
 
+console.log('customer tabs')
+
+check('a tab balance is the signed sum of its append-only entries', () => {
+  const entries = [
+    mkTabEntry('e1', 't1', 'credit', fromMaluti(5000)),
+    mkTabEntry('e2', 't1', 'sale', -fromMaluti(2000)),
+    mkTabEntry('e3', 't1', 'payout', -fromMaluti(1000)),
+    mkTabEntry('e4', 't2', 'credit', fromMaluti(500)),
+  ]
+  assert.equal(tabBalance(entries, 't1'), fromMaluti(2000))
+  assert.equal(tabBalanceMap(entries).get('t2'), fromMaluti(500))
+  assert.equal(totalTabBalance(entries), fromMaluti(2500))
+})
+
+check('tab rows hide deleted tabs and put the biggest balance first', () => {
+  const rows = buildTabRows(
+    [
+      mkTab('t1', 'Small', { createdAt: 2 }),
+      mkTab('t2', 'Large', { createdAt: 1 }),
+      mkTab('t3', 'Gone', { deletedAt: 5 }),
+    ],
+    [
+      mkTabEntry('e1', 't1', 'credit', fromMaluti(100), { createdAt: 20 }),
+      mkTabEntry('e2', 't2', 'credit', fromMaluti(900), { createdAt: 10 }),
+    ],
+  )
+  assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map((row) => row.tab.name), ['Large', 'Small'])
+  assert.equal(rows[0]!.lastActivity, 10)
+  assert.equal(rows[1]!.entryCount, 1)
+})
+
+check('tab names are collapsed before they reach the ledger', () => {
+  assert.equal(cleanTabName('  Mama   Chikondi  '), 'Mama Chikondi')
+  assert.equal(cleanTabName('x'.repeat(80)).length, 60)
+})
+
+check('money held on a tab balances the trial balance and the balance sheet', () => {
+  const sale = mkSale(fromMaluti(2000), 'T001', 'completed', {
+    amountTendered: 0,
+    change: 0,
+    tabId: 't1',
+    tabApplied: fromMaluti(2000),
+  })
+  const cash = [mkCash('tab_credit', fromMaluti(5000))]
+  const entries = [
+    mkTabEntry('e1', 't1', 'credit', fromMaluti(5000)),
+    mkTabEntry('e2', 't1', 'sale', -fromMaluti(2000), { saleId: sale.id }),
+  ]
+
+  const tb = trialBalances([sale], [], cash, [], [], entries)
+  assert.equal(tb.difference, 0, 'tab entries do not balance')
+  const by = new Map(tb.rows.map((row) => [row.account, row.balance]))
+  assert.equal(by.get(ACCOUNTS.CASH), fromMaluti(5000))
+  assert.equal(by.get(ACCOUNTS.CUSTOMER_CREDITS), -fromMaluti(3000))
+
+  const bs = balanceSheet(cash, [], [], [sale], [], totalTabBalance(entries))
+  assert.equal(bs.customerCredits, fromMaluti(3000))
+  assert.ok(bs.check === 0, 'tab liability is missing from the balance sheet')
+
+  const cf = cashFlow(cash, ['2026-10-12'])
+  assert.equal(cf.tabIn, fromMaluti(5000))
+  assert.ok(cf.tabOut === 0)
+  assert.equal(cf.net, fromMaluti(5000))
+  assert.equal(cf.closing, fromMaluti(5000))
+})
+
 console.log('merge rules')
 
 check('the newest edit wins', () => {
@@ -1004,6 +1118,7 @@ check('shop codes are lowercase, stable and validated', () => {
 check('the push order puts parents before children', () => {
   assert.ok(SYNC_ENTITIES.indexOf('sales') < SYNC_ENTITIES.indexOf('sale_lines'))
   assert.ok(SYNC_ENTITIES.indexOf('products') < SYNC_ENTITIES.indexOf('stock_movements'))
+  assert.ok(SYNC_ENTITIES.indexOf('customer_tabs') < SYNC_ENTITIES.indexOf('tab_entries'))
   assert.ok(SYNC_ENTITIES.includes('settings'))
 })
 

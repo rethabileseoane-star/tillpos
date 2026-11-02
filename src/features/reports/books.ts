@@ -1,10 +1,12 @@
 import { db } from '@/db'
 import type {
   CashMovement,
+  CustomerTab,
   Product,
   Sale,
   SaleLine,
   StockMovement,
+  TabEntry,
 } from '@/db/types'
 import type { Cents } from '@/domain/money'
 import { localDate, localTime } from '@/domain/time'
@@ -27,15 +29,21 @@ import {
   outstandingCredit,
   writeOffDate,
 } from '@/features/credit/credit'
+import {
+  TAB_KIND_LABEL,
+  buildTabRows,
+  totalTabBalance,
+} from '@/features/tabs/tabs'
 
 /**
  * The books pack: every record an accountant asks for, built as plain tables
  * so the PDF renderer and any future format share one source of truth.
  *
- *  - Sales journal            every completed sale line, cash and credit
+ *  - Sales journal            every completed sale line, cash, tab and credit
  *  - Credit sales journal     who owes what, paid to date and balance
+ *  - Customer tabs            who the shop owes, and every tab movement
  *  - Cash receipts journal    money into the drawer (sales, credit payments,
- *                             floats, money in)
+ *                             floats, money in, tab credits)
  *  - Credit receipts journal  money collected against credit sales
  *  - Payments journal         money out of the drawer (stock, expenses,
  *                             drawings, loan repayments)
@@ -61,21 +69,33 @@ export interface BooksData {
   cash: CashMovement[]
   products: Product[]
   stockMoves: StockMovement[]
+  tabs: CustomerTab[]
+  tabEntries: TabEntry[]
 }
 
 export async function loadBooksData(): Promise<BooksData> {
-  const [sales, lines, cash, products, stockMoves] = await Promise.all([
+  const [sales, lines, cash, products, stockMoves, tabs, tabEntries] = await Promise.all([
     db.sales.toArray(),
     db.saleLines.toArray(),
     db.cashMovements.toArray(),
     db.products.toArray(),
     db.stockMovements.toArray(),
+    db.customerTabs.toArray(),
+    db.tabEntries.toArray(),
   ])
   // Ledgers read in primary-key order by IndexedDB; journals must read in the
   // order money moved, or running balances come out differently each run.
   const byTime = <T extends { createdAt: number; id: string }>(rows: T[]): T[] =>
     rows.sort((a, z) => a.createdAt - z.createdAt || a.id.localeCompare(z.id))
-  return { sales, lines, cash: byTime(cash), products, stockMoves: byTime(stockMoves) }
+  return {
+    sales,
+    lines,
+    cash: byTime(cash),
+    products,
+    stockMoves: byTime(stockMoves),
+    tabs,
+    tabEntries: byTime(tabEntries),
+  }
 }
 
 const inWindow = (dates: string[]) => (d: string) => dates.includes(d)
@@ -110,7 +130,11 @@ export function salesJournal(data: BooksData, dates: string[]): BookTable {
         fmt2(l.unitPrice),
         fmt2(l.lineTotal),
         sale.customerName ?? '',
-        sale.paymentMethod === 'credit' ? 'Credit' : 'Cash',
+        sale.paymentMethod === 'credit'
+          ? 'Credit'
+          : (sale.tabApplied ?? 0) > 0 || (sale.tabChangeKept ?? 0) > 0
+            ? 'Cash + tab'
+            : 'Cash',
         sale.cashierName ?? '',
       ])
       total += l.lineTotal
@@ -220,6 +244,83 @@ export function creditSalesJournal(data: BooksData, dates: string[]): BookTable 
   }
 }
 
+/** Current customer-tab balances: the money the shop owes customers. */
+export function customerTabsSummary(data: BooksData): BookTable {
+  const rows = buildTabRows(data.tabs, data.tabEntries)
+  const total = totalTabBalance(data.tabEntries)
+  return {
+    title: 'Customer tabs',
+    subtitle: 'Money the shop owes customers, as of today',
+    columns: ['Customer', 'Phone', 'Balance (M)', 'Entries', 'Last movement'],
+    rows: rows.map((row) => [
+      row.tab.name,
+      row.tab.phone ?? '',
+      fmt2(row.balance),
+      row.entryCount,
+      row.lastActivity === null
+        ? 'No movements yet'
+        : `${localDate(row.lastActivity)} ${localTime(row.lastActivity)}`,
+    ]),
+    notes: [
+      `Total the shop owes on tabs (M): ${fmt2(total)}`,
+      `${rows.filter((row) => row.balance > 0).length} tab(s) with a balance.`,
+      'A tab is the opposite of customer credit: the shop owes the customer, usually change kept when the drawer had none.',
+    ],
+  }
+}
+
+/** Every movement on a customer tab in the period. */
+export function customerTabTransactions(data: BooksData, dates: string[]): BookTable {
+  const { tabs, tabEntries, sales } = data
+  const window = inWindow(dates)
+  const tabById = new Map(tabs.map((tab) => [tab.id, tab]))
+  const saleById = new Map(sales.map((sale) => [sale.id, sale]))
+  const rows: (string | number)[][] = []
+  let credits: Cents = 0
+  let used: Cents = 0
+  let paidOut: Cents = 0
+
+  for (const entry of tabEntries) {
+    if (!window(entry.businessDate)) continue
+    const sale = entry.saleId ? saleById.get(entry.saleId) : undefined
+    rows.push([
+      entry.businessDate,
+      localTime(entry.createdAt),
+      tabById.get(entry.tabId)?.name ?? 'Customer',
+      TAB_KIND_LABEL[entry.kind],
+      fmt2(entry.amount),
+      sale?.receiptNo ?? '',
+      entry.note,
+      entry.staffName ?? sale?.cashierName ?? '',
+    ])
+    if (entry.amount > 0) credits += entry.amount
+    else if (entry.kind === 'payout') paidOut += -entry.amount
+    else used += -entry.amount
+  }
+
+  return {
+    title: 'Customer tab transactions',
+    subtitle: `Every movement on a customer tab · ${periodLabel(dates)}`,
+    columns: [
+      'Date',
+      'Time',
+      'Customer',
+      'Type',
+      'Amount (M)',
+      'Receipt',
+      'Note',
+      'Staff',
+    ],
+    rows,
+    notes: [
+      `Credits added (M): ${fmt2(credits)}`,
+      `Spent at the till (M): ${fmt2(used)}`,
+      `Cash paid out (M): ${fmt2(paidOut)}`,
+      `Balance the shop owes on tabs now (M): ${fmt2(totalTabBalance(tabEntries))}`,
+    ],
+  }
+}
+
 /** Money collected against credit sales in the period, including deposits. */
 export function creditReceiptsJournal(data: BooksData, dates: string[]): BookTable {
   const { sales, cash } = data
@@ -308,7 +409,7 @@ export function receiptsJournal(data: BooksData, dates: string[]): BookTable {
   const { cash } = data
   const window = inWindow(dates)
   const running = runningBalances(cash)
-  const types = new Set(['sale', 'credit_payment', 'void', 'float', 'cash_in'])
+  const types = new Set(['sale', 'credit_payment', 'void', 'float', 'cash_in', 'tab_credit'])
   const rows: (string | number)[][] = []
   let inTotal: Cents = 0
   for (const m of cash) {
@@ -342,7 +443,7 @@ export function paymentsJournal(data: BooksData, dates: string[]): BookTable {
   const { cash } = data
   const window = inWindow(dates)
   const running = runningBalances(cash)
-  const types = new Set(['purchase', 'expense', 'drawing', 'loan_repay'])
+  const types = new Set(['purchase', 'expense', 'drawing', 'loan_repay', 'tab_payout'])
   const rows: (string | number)[][] = []
   const byType = new Map<string, Cents>()
   for (const m of cash) {
@@ -371,7 +472,14 @@ export function paymentsJournal(data: BooksData, dates: string[]): BookTable {
 
 /** Every account with debits and credits — the proof the books balance. */
 export function trialBalanceTable(data: BooksData): BookTable {
-  const tb = trialBalances(data.sales, data.lines, data.cash, data.products, data.stockMoves)
+  const tb = trialBalances(
+    data.sales,
+    data.lines,
+    data.cash,
+    data.products,
+    data.stockMoves,
+    data.tabEntries,
+  )
   const rows: (string | number)[][] = []
   let debit: Cents = 0
   let credit: Cents = 0
@@ -446,6 +554,8 @@ export function cashFlowTable(data: BooksData, dates: string[]): BookTable {
     ['Cash paid for stock and expenses (operating)', fmt2(-cf.operatingOut)],
     ['Cash put in by the owner and loans (financing)', fmt2(cf.financingIn)],
     ['Cash paid to the owner and loan repayments (financing)', fmt2(-cf.financingOut)],
+    ['Cash received for customer tabs', fmt2(cf.tabIn)],
+    ['Cash paid out from customer tabs', fmt2(-cf.tabOut)],
     ['NET CHANGE IN CASH', fmt2(cf.net)],
     ['CASH IN THE DRAWER AT THE END', fmt2(cf.closing)],
   ]
@@ -459,7 +569,14 @@ export function cashFlowTable(data: BooksData, dates: string[]): BookTable {
 }
 
 export function balanceSheetTable(data: BooksData): BookTable {
-  const bs = balanceSheet(data.cash, data.products, data.stockMoves, data.sales, data.lines)
+  const bs = balanceSheet(
+    data.cash,
+    data.products,
+    data.stockMoves,
+    data.sales,
+    data.lines,
+    totalTabBalance(data.tabEntries),
+  )
   const rows: (string | number)[][] = [
     ['ASSETS'],
     ['  Cash in drawer', fmt2(bs.cash)],
@@ -468,7 +585,7 @@ export function balanceSheetTable(data: BooksData): BookTable {
     ['TOTAL ASSETS', fmt2(bs.totalAssets)],
     ['LIABILITIES'],
     ['  Loans owed', fmt2(bs.loans)],
-    ['  Customer credits (cash held for customers)', fmt2(bs.customerCredits)],
+    ['  Customer credits and tabs (cash held for customers)', fmt2(bs.customerCredits)],
     ['TOTAL LIABILITIES', fmt2(bs.loans + bs.customerCredits)],
     ['OWNER\u2019S EQUITY'],
     ['  Owner capital (cash put in)', fmt2(bs.capitalIn)],
@@ -486,7 +603,7 @@ export function balanceSheetTable(data: BooksData): BookTable {
   if (bs.customerCredits !== 0) {
     notes.push(
       bs.customerCredits > 0
-        ? 'Customer credits are cash held for customers after an overpayment or a late payment on a voided sale.'
+        ? 'Customer credits and tabs are cash held for customers: overpayments, late payments on voided sales, and change kept on a tab.'
         : 'A negative customer credit is an over-refund the customer owes back.',
     )
   }
@@ -545,6 +662,8 @@ export function buildBookPack(data: BooksData, dates: string[]): BookTable[] {
   return [
     salesJournal(data, dates),
     creditSalesJournal(data, dates),
+    customerTabsSummary(data),
+    customerTabTransactions(data, dates),
     receiptsJournal(data, dates),
     creditReceiptsJournal(data, dates),
     paymentsJournal(data, dates),

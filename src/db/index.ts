@@ -3,12 +3,14 @@ import { getActiveShop, type ShopProfile } from '@/shops/registry'
 import type {
   AppSettings,
   CashMovement,
+  CustomerTab,
   OutboxItem,
   Product,
   Sale,
   SaleLine,
   StockMovement,
   SyncMeta,
+  TabEntry,
 } from './types'
 
 /**
@@ -39,6 +41,8 @@ export class TillDatabase extends Dexie {
   saleLines!: Table<SaleLine, string>
   stockMovements!: Table<StockMovement, string>
   cashMovements!: Table<CashMovement, string>
+  customerTabs!: Table<CustomerTab, string>
+  tabEntries!: Table<TabEntry, string>
   settings!: Table<AppSettings, string>
   outbox!: Table<OutboxItem, number>
 
@@ -94,6 +98,22 @@ export class TillDatabase extends Dexie {
           })),
         )
       })
+
+    // v4 adds customer tabs: money the shop owes customers, usually change
+    // kept when the drawer had none. `customerTabs` is the customer identity;
+    // `tabEntries` is the append-only ledger whose sum is the balance.
+    this.version(4).stores({
+      products:
+        'id, barcode, name, category, active, updatedAt, deletedAt, [barcode+deletedAt], *barcodes',
+      sales: 'id, receiptNo, businessDate, status, createdAt, updatedAt, deletedAt, [businessDate+status]',
+      saleLines: 'id, saleId, productId, barcode',
+      stockMovements: 'id, productId, reason, refId, createdAt, [productId+createdAt]',
+      cashMovements: 'id, reason, refId, businessDate, createdAt, [businessDate+reason]',
+      customerTabs: 'id, name, phone, updatedAt, deletedAt',
+      tabEntries: 'id, tabId, saleId, kind, businessDate, createdAt, [tabId+createdAt]',
+      settings: 'id, key, updatedAt',
+      outbox: '++id, entity, entityId, createdAt',
+    })
 
     // Scan-time lookup is the hottest path in the app.
     this.products!.hook('creating', (_pk, obj) => {

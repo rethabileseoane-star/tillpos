@@ -167,6 +167,10 @@ export interface CashSummary {
   expenses: Cents
   /** Cash leaving the drawer to repay loans, in the window. */
   loanRepay: Cents
+  /** Cash left with the shop to put on a customer tab, in the window. */
+  tabCredits: Cents
+  /** Cash handed back from customer tabs, in the window (a negative figure). */
+  tabPayouts: Cents
   /** What the shop still owes, all time. */
   loans: Cents
   /** All-time drawer balance. The drawer is one running figure, not per-day. */
@@ -194,6 +198,8 @@ export function summariseCash(movements: CashMovement[], dates?: string[]): Cash
     drawings: of('drawing'),
     expenses: of('expense'),
     loanRepay: of('loan_repay'),
+    tabCredits: of('tab_credit'),
+    tabPayouts: of('tab_payout'),
     loans,
     balance: movements.reduce((s, m) => s + m.delta, 0),
   }

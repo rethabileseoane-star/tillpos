@@ -228,6 +228,8 @@ export function HistoryScreen() {
           const credit = sale.paymentMethod === 'credit'
           const balance = creditBalance(sale, paidMap)
           const writtenOff = (sale.writtenOffAmount ?? 0) > 0
+          const hasTab =
+            (sale.tabApplied ?? 0) > 0 || (sale.tabChangeKept ?? 0) > 0
           return (
             <li key={sale.id}>
               <button
@@ -246,6 +248,9 @@ export function HistoryScreen() {
                       {credit && sale.status === 'completed' && (
                         <span className="chip bg-sky-500/20 text-sky-300">CREDIT</span>
                       )}
+                      {hasTab && (
+                        <span className="chip bg-sky-500/20 text-sky-300">TAB</span>
+                      )}
                       {writtenOff && (
                         <span className="chip bg-rose-500/20 text-rose-300">WRITTEN OFF</span>
                       )}
@@ -256,7 +261,7 @@ export function HistoryScreen() {
                         minute: '2-digit',
                       })}
                       {' · '}
-                      {credit ? 'Credit' : 'Cash'}
+                      {credit ? 'Credit' : hasTab ? 'Cash + tab' : 'Cash'}
                       {' · '}
                       {sale.cashierName?.trim()
                         ? `Cashier: ${sale.cashierName.trim()}`
@@ -354,11 +359,22 @@ function SaleDetail({
       [saleId],
     ) ?? []
 
+  const tab = useLiveQuery(
+    async () => {
+      const current = await db.sales.get(saleId)
+      return current?.tabId ? db.customerTabs.get(current.tabId) : undefined
+    },
+    [saleId],
+  )
+
   const paid = payments.reduce((sum, m) => sum + m.delta, 0)
   const paidMap = useMemo(() => new Map([[saleId, paid]]), [saleId, paid])
 
   if (!sale) return null
   const credit = sale.paymentMethod === 'credit'
+  const hasTab =
+    (sale.tabApplied ?? 0) > 0 || (sale.tabChangeKept ?? 0) > 0
+  const cashChange = Math.max(0, (sale.change ?? 0) - (sale.tabChangeKept ?? 0))
   const balance = creditBalance(sale, paidMap)
   const state = creditState(sale, paidMap)
   const writtenOff = (sale.writtenOffAmount ?? 0) > 0
@@ -387,12 +403,18 @@ function SaleDetail({
         </div>
         <div className="flex justify-between text-slate-400">
           <span>Payment</span>
-          <span>{credit ? 'Credit' : 'Cash'}</span>
+          <span>{credit ? 'Credit' : hasTab ? 'Cash + tab' : 'Cash'}</span>
         </div>
         {credit && (
           <div className="flex justify-between text-slate-400">
             <span>Customer</span>
             <span className="ml-2 truncate">{sale.customerName || '—'}</span>
+          </div>
+        )}
+        {hasTab && tab && (
+          <div className="flex justify-between text-slate-400">
+            <span>Tab</span>
+            <span className="ml-2 truncate">{tab.name}</span>
           </div>
         )}
 
@@ -402,6 +424,14 @@ function SaleDetail({
               <span className="text-slate-400">Subtotal</span>
               <span className="font-mono">{formatMaluti(sale.subtotal)}</span>
             </div>
+            {(sale.tabApplied ?? 0) > 0 && (
+              <div className="flex justify-between text-slate-400">
+                <span>Paid from tab</span>
+                <span className="font-mono text-sky-300">
+                  {formatMaluti(sale.tabApplied ?? 0)}
+                </span>
+              </div>
+            )}
             {sale.amountTendered !== null && (
               <>
                 <div className="flex justify-between text-slate-400">
@@ -409,10 +439,18 @@ function SaleDetail({
                   <span className="font-mono">{formatMaluti(sale.amountTendered)}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Change</span>
-                  <span className="font-mono">{formatMaluti(sale.change ?? 0)}</span>
+                  <span>Cash change</span>
+                  <span className="font-mono">{formatMaluti(cashChange)}</span>
                 </div>
               </>
+            )}
+            {(sale.tabChangeKept ?? 0) > 0 && (
+              <div className="flex justify-between text-slate-400">
+                <span>Change kept on tab</span>
+                <span className="font-mono text-sky-300">
+                  {formatMaluti(sale.tabChangeKept ?? 0)}
+                </span>
+              </div>
             )}
             {credit && sale.status === 'completed' && (
               <>

@@ -2,6 +2,7 @@ import Papa from 'papaparse'
 import { db } from '@/db'
 import { summariseCash } from '@/features/cash/cashService'
 import { creditTotals } from '@/features/credit/credit'
+import { totalTabBalance } from '@/features/tabs/tabs'
 import { localTime } from '@/domain/time'
 import type { Product } from '@/db/types'
 
@@ -17,13 +18,14 @@ import type { Product } from '@/db/types'
  * reconcile with the journals.
  */
 export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
-  const [sales, products, allSales, cashRows] = await Promise.all([
+  const [sales, products, allSales, cashRows, tabEntries] = await Promise.all([
     dates?.length
       ? db.sales.where('businessDate').anyOf(dates).toArray()
       : db.sales.toArray(),
     db.products.toArray(),
     db.sales.toArray(),
     db.cashMovements.toArray(),
+    db.tabEntries.toArray(),
   ])
   const byId = new Map(products.map((p) => [p.id, p]))
 
@@ -60,6 +62,8 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
         cost_mwk: (lineCost / 100).toFixed(2),
         profit_mwk: ((l.lineTotal - lineCost) / 100).toFixed(2),
         payment_method: sale.paymentMethod,
+        tab_applied_mwk: ((sale.tabApplied ?? 0) / 100).toFixed(2),
+        tab_change_kept_mwk: ((sale.tabChangeKept ?? 0) / 100).toFixed(2),
       }
     })
     .filter(Boolean)
@@ -67,7 +71,8 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
   const header = Object.keys(rows[0] ?? {
     date: '', receipt_no: '', time: '', cashier: '', customer: '', barcode: '',
     item: '', qty: '', unit_price_mwk: '', unit_cost_mwk: '', line_total_mwk: '',
-    cost_mwk: '', profit_mwk: '', payment_method: '',
+    cost_mwk: '', profit_mwk: '', payment_method: '', tab_applied_mwk: '',
+    tab_change_kept_mwk: '',
   })
 
   const voided = sales.filter((s) => s.status === 'voided')
@@ -101,6 +106,9 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
     `# Paid out (MWK): ${Math.abs(cash.expenses) / 100}`,
     `# Loan repayments (MWK): ${Math.abs(cash.loanRepay) / 100}`,
     `# Loans owed (MWK): ${cash.loans / 100}`,
+    `# Tab cash in (MWK): ${cash.tabCredits / 100}`,
+    `# Tab cash paid out (MWK): ${Math.abs(cash.tabPayouts) / 100}`,
+    `# Shop owes on customer tabs now (MWK): ${totalTabBalance(tabEntries) / 100}`,
     `# Cash in drawer (MWK): ${cash.balance / 100}`,
   ].join('\n')
 

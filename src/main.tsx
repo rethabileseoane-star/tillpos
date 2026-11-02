@@ -10,6 +10,7 @@ import { LicenseProvider } from '@/licensing/LicenseContext'
 import { SellScreen } from '@/features/sell/SellScreen'
 import { CatalogScreen } from '@/features/catalog/CatalogScreen'
 import { HistoryScreen } from '@/features/history/HistoryScreen'
+import { TabsScreen } from '@/features/tabs/TabsScreen'
 import { MoneyScreen } from '@/features/money/MoneyScreen'
 import { ReportsScreen } from '@/features/reports/ReportsScreen'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
@@ -47,6 +48,7 @@ const router = createHashRouter([
     { index: true, element: <SellScreen /> },
     { path: 'catalog', element: <CatalogScreen /> },
     { path: 'history', element: <HistoryScreen /> },
+    { path: 'tabs', element: <TabsScreen /> },
     { path: 'money', element: <OwnerOnly><MoneyScreen /></OwnerOnly> },
     { path: 'reports', element: <OwnerOnly><ReportsScreen /></OwnerOnly> },
     { path: 'settings', element: <OwnerOnly><SettingsScreen /></OwnerOnly> },

@@ -75,6 +75,16 @@ export interface Sale extends SyncMeta {
   /** Customer who owes the money on a `credit` sale. Empty for cash sales. */
   customerName?: string
   /**
+   * Customer tab used to pay part of a cash sale. A tab is money the shop owes
+   * the customer (usually change kept when the drawer had none), the opposite
+   * of a `credit` sale. Optional on rows written before tabs existed.
+   */
+  tabId?: string
+  /** Amount taken off this sale from the customer's tab. */
+  tabApplied?: Cents
+  /** Change the customer chose to leave on their tab instead of taking in cash. */
+  tabChangeKept?: Cents
+  /**
    * Bad-debt write-off. A credit sale keeps its revenue and status; the unpaid
    * balance is removed by a bad-debt expense and recorded here for the journal.
    */
@@ -119,6 +129,10 @@ export type CashReason =
   | 'loan_repay'
   /** Money received against a credit sale (a deposit or a later part-payment). */
   | 'credit_payment'
+  /** Cash left with the shop to put on a customer tab. */
+  | 'tab_credit'
+  /** Cash handed back to a customer from their tab. */
+  | 'tab_payout'
 
 /**
  * What a "money in" movement represents. Own money is capital (owner equity);
@@ -152,6 +166,40 @@ export interface CashMovement extends SyncMeta {
 }
 
 /**
+ * A customer tab: money the shop owes the customer.
+ *
+ * This is deliberately the opposite direction from a credit sale. It records
+ * change the customer left behind when the till had none, a deposit they asked
+ * the shop to hold, and the running balance they spend down later. The name is
+ * the only required identity; a phone number is optional.
+ */
+export interface CustomerTab extends SyncMeta {
+  name: string
+  phone?: string
+  note?: string
+}
+
+export type TabEntryKind = 'credit' | 'sale' | 'payout' | 'void'
+
+/**
+ * One movement on a customer tab. Positive amounts increase what the shop owes
+ * the customer; negative amounts reduce it. Entries are append-only, so the
+ * balance is always the sum and the history explains every tambala.
+ */
+export interface TabEntry extends SyncMeta {
+  tabId: string
+  kind: TabEntryKind
+  amount: Cents
+  /** Set when the entry came from a sale (used or change kept). */
+  saleId: string | null
+  /** Set when cash moved in or out with this entry. */
+  cashMovementId: string | null
+  businessDate: string
+  note: string
+  staffName?: string
+}
+
+/**
  * The synced tables. The name doubles as the remote table name, which is why
  * the snake_case members read the way they do.
  *
@@ -159,11 +207,13 @@ export interface CashMovement extends SyncMeta {
  * `src/sync/shared.ts`; the app lock and this device's session never leave it.
  */
 export type SyncEntity =
+  | 'customer_tabs'
   | 'products'
   | 'sales'
   | 'sale_lines'
   | 'stock_movements'
   | 'cash_movements'
+  | 'tab_entries'
   | 'settings'
 export type SyncOp = 'upsert' | 'delete'
 

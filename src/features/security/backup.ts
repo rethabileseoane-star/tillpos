@@ -5,11 +5,13 @@ import { isSharedSettingKey } from '@/sync/shared'
 import type {
   AppSettings,
   CashMovement,
+  CustomerTab,
   OutboxItem,
   Product,
   Sale,
   SaleLine,
   StockMovement,
+  TabEntry,
 } from '@/db/types'
 import { localDate } from '@/domain/time'
 import { downloadBlob } from '@/features/catalog/csvImport'
@@ -37,6 +39,8 @@ export interface TillBackup {
     saleLines: SaleLine[]
     stockMovements: StockMovement[]
     cashMovements: CashMovement[]
+    customerTabs: CustomerTab[]
+    tabEntries: TabEntry[]
     settings: AppSettings[]
     outbox: OutboxItem[]
   }
@@ -70,16 +74,27 @@ function isExportableOutboxItem(item: OutboxItem): boolean {
 }
 
 export async function buildBackup(): Promise<TillBackup> {
-  const [products, sales, saleLines, stockMovements, cashMovements, settings, outbox] =
-    await Promise.all([
-      db.products.toArray(),
-      db.sales.toArray(),
-      db.saleLines.toArray(),
-      db.stockMovements.toArray(),
-      db.cashMovements.toArray(),
-      db.settings.toArray(),
-      db.outbox.toArray(),
-    ])
+  const [
+    products,
+    sales,
+    saleLines,
+    stockMovements,
+    cashMovements,
+    customerTabs,
+    tabEntries,
+    settings,
+    outbox,
+  ] = await Promise.all([
+    db.products.toArray(),
+    db.sales.toArray(),
+    db.saleLines.toArray(),
+    db.stockMovements.toArray(),
+    db.cashMovements.toArray(),
+    db.customerTabs.toArray(),
+    db.tabEntries.toArray(),
+    db.settings.toArray(),
+    db.outbox.toArray(),
+  ])
 
   return {
     app: 'till-pos',
@@ -91,6 +106,8 @@ export async function buildBackup(): Promise<TillBackup> {
       saleLines,
       stockMovements,
       cashMovements,
+      customerTabs,
+      tabEntries,
       settings: settings.filter((s) => !isPrivateSetting(s.key)),
       outbox: outbox.filter(isExportableOutboxItem),
     },

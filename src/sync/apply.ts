@@ -18,11 +18,13 @@ interface RowTable {
 
 /** Entity names are the remote table names, which is why this is a plain map. */
 const TABLES: Record<SyncEntity, RowTable> = {
+  customer_tabs: db.customerTabs as unknown as RowTable,
   products: db.products as unknown as RowTable,
   sales: db.sales as unknown as RowTable,
   sale_lines: db.saleLines as unknown as RowTable,
   stock_movements: db.stockMovements as unknown as RowTable,
   cash_movements: db.cashMovements as unknown as RowTable,
+  tab_entries: db.tabEntries as unknown as RowTable,
   settings: db.settings as unknown as RowTable,
 }
 

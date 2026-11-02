@@ -17,11 +17,13 @@ export type RemoteRow = SyncMeta & Record<string, unknown>
  * never arrives before the row it points at.
  */
 export const SYNC_ENTITIES: SyncEntity[] = [
+  'customer_tabs',
   'products',
   'sales',
   'sale_lines',
   'stock_movements',
   'cash_movements',
+  'tab_entries',
   'settings',
 ]
 
