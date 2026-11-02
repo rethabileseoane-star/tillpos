@@ -33,6 +33,10 @@ function mapHeaders(fields: string[]): Record<string, string> {
   for (const raw of fields) {
     const normalized = String(raw).toLowerCase().replace(/[_\s]+/g, ' ').trim()
     for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
+      // First column wins: a file with both "name" and "description" must keep
+      // the name column as the name and use the description for details, not
+      // let the later column overwrite the earlier one.
+      if (map[key]) continue
       if (aliases.some((a) => a.replace(/[_\s]+/g, ' ') === normalized)) {
         map[key] = raw
         break
@@ -54,17 +58,6 @@ function rowsToDrafts(rows: Record<string, unknown>[]): {
   const seen = new Map<string, number>()
   const seenDuplicates = new Set<string>()
 
-  const registerBarcode = (barcode: string, rowNo: number): boolean => {
-    if (!barcode || !isValidBarcode(barcode)) return false
-    if (seen.has(barcode)) {
-      seenDuplicates.add(barcode)
-      errors.push({ row: rowNo, barcode, reason: `duplicate of row ${seen.get(barcode)}` })
-      return false
-    }
-    seen.set(barcode, rowNo)
-    return true
-  }
-
   rows.forEach((row, i) => {
     const rowNo = i + 2 // +1 for the header, +1 for 1-based
     const get = (key: keyof ProductDraft): unknown =>
@@ -75,16 +68,17 @@ function rowsToDrafts(rows: Record<string, unknown>[]): {
       errors.push({ row: rowNo, barcode, reason: 'missing or invalid barcode' })
       return
     }
-    if (!registerBarcode(barcode, rowNo)) return
 
     // Additional barcodes from a "barcodes" column, semicolon or comma separated.
+    // Our own export writes the primary barcode into this column as well, and a
+    // natural file often repeats it, so that is normal rather than a duplicate.
     const extraRaw = headerMap['barcodes'] ? String(get('barcodes') ?? '') : ''
-    const extraBarcodes = extraRaw
-      .split(/[;,]/)
-      .map((b) => normalizeBarcode(b.trim()))
-      .filter(Boolean)
-    for (const bc of extraBarcodes) {
-      if (!registerBarcode(bc, rowNo)) return
+    const extraBarcodes: string[] = []
+    for (const part of extraRaw.split(/[;,]/)) {
+      const bc = normalizeBarcode(part.trim())
+      if (!bc || !isValidBarcode(bc)) continue
+      if (bc === barcode || extraBarcodes.includes(bc)) continue
+      extraBarcodes.push(bc)
     }
 
     const name = String(get('name') ?? '').trim()
@@ -115,6 +109,18 @@ function rowsToDrafts(rows: Record<string, unknown>[]): {
       }
       cost = parsed
     }
+
+    // Claim the barcodes only once the row is known to be good. Registering
+    // before validation meant a row skipped for a bad price still reserved its
+    // barcode, so a later valid row with the same code was called a duplicate.
+    const claimed = [barcode, ...extraBarcodes]
+    const clash = claimed.find((bc) => seen.has(bc))
+    if (clash) {
+      seenDuplicates.add(clash)
+      errors.push({ row: rowNo, barcode: clash, reason: `duplicate of row ${seen.get(clash)}` })
+      return
+    }
+    for (const bc of claimed) seen.set(bc, rowNo)
 
     drafts.push({
       barcode,

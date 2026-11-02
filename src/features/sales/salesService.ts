@@ -223,19 +223,19 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
         throw new Error('A written-off debt cannot be voided. Record a correcting sale instead.')
       }
 
-      const lines = await db.saleLines.where('saleId').equals(saleId).toArray()
+      const originals = await db.stockMovements
+        .where('refId')
+        .equals(saleId)
+        .filter((m) => m.reason === 'sale')
+        .toArray()
 
-      for (const line of lines) {
-        // Only reverse a movement we actually recorded at sale time.
-        const original = await db.stockMovements
-          .where('productId')
-          .equals(line.productId)
-          .filter((m) => m.refId === saleId && m.reason === 'sale')
-          .first()
-        if (!original) continue
-
+      // Reverse every movement exactly once. Matching per sale line by product
+      // reused the same original movement when one product appeared on several
+      // lines (for example two aliases scanned separately) and gave its stock
+      // back more than once.
+      for (const original of originals) {
         const reversal = withSyncMeta(undefined, {
-          productId: line.productId,
+          productId: original.productId,
           delta: -original.delta,
           reason: 'void' as const,
           refId: saleId,
@@ -245,9 +245,9 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
         await queueEntity('stock_movements', reversal.id, 'upsert', reversal)
 
         // original.delta is negative, so subtracting it gives the stock back.
-        const product = await db.products.get(line.productId)
+        const product = await db.products.get(original.productId)
         if (product) {
-          await db.products.update(line.productId, {
+          await db.products.update(original.productId, {
             stockQty: product.stockQty - original.delta,
             updatedAt: Date.now(),
           })

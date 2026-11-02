@@ -10,6 +10,7 @@ import {
 } from '@/features/install/install'
 import { useInstall } from '@/features/install/useInstall'
 import { useAppLock } from '@/features/security/LockContext'
+import { LicenseNotice } from '@/licensing/LicenseGate'
 import { startSync } from '@/sync/scheduler'
 
 const NAV = [
@@ -154,6 +155,7 @@ function Shell() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink-900">
+      <LicenseNotice />
       <InstallBanner needed={needsInstall} canInstall={canInstall} />
       <main className="flex-1 pb-20">
         <Outlet />

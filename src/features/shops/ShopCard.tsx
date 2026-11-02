@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadedShop } from '@/db'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
+import { useLicense } from '@/licensing/LicenseContext'
 import {
   listShops,
   switchShopNow,
@@ -21,6 +22,9 @@ import { runSync } from '@/sync/scheduler'
 export function ShopCard() {
   const [shops, setShops] = useState<ShopProfile[]>(() => listShops())
   const [active] = useState<ShopProfile>(() => loadedShop)
+  const license = useLicense()
+  const shopLimit = license.claims?.maxShops ?? 1
+  const atShopLimit = shops.length >= shopLimit
   const [sheet, setSheet] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -104,15 +108,16 @@ export function ShopCard() {
       <button
         type="button"
         className="btn-ghost mt-3 w-full !py-2.5 text-sm"
-        disabled={busy !== null}
+        disabled={busy !== null || atShopLimit}
         onClick={() => setSheet(true)}
       >
-        Add another shop
+        {atShopLimit ? `Shop limit reached (${shopLimit})` : 'Add another shop'}
       </button>
 
       <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-        A new shop starts with the owner account only. Its catalog is empty, and
-        it uses its own Supabase login with the same shop code.
+        {atShopLimit
+          ? `This licence allows ${shopLimit} shop${shopLimit === 1 ? '' : 's'}. Ask your supplier to raise the limit before adding another.`
+          : 'A new shop starts with the owner account only. Its catalog is empty, and it uses its own Supabase login with the same shop code.'}
       </p>
 
       {sheet && (

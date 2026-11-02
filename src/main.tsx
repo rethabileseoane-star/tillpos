@@ -4,6 +4,9 @@ import { Navigate, RouterProvider, createHashRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
 import { AppLockProvider, useAppLock } from '@/features/security/LockContext'
+import { LicenseAdminScreen } from '@/features/admin/LicenseAdminScreen'
+import { LicenseGate } from '@/licensing/LicenseGate'
+import { LicenseProvider } from '@/licensing/LicenseContext'
 import { SellScreen } from '@/features/sell/SellScreen'
 import { CatalogScreen } from '@/features/catalog/CatalogScreen'
 import { HistoryScreen } from '@/features/history/HistoryScreen'
@@ -23,10 +26,24 @@ function OwnerOnly({ children }: { children: ReactNode }) {
   return isOwner ? <>{children}</> : <Navigate to="/" replace />
 }
 
+// The licence gate is above the staff lock, so an expired subscription cannot
+// show the PIN screen and looks like a closed till. /admin deliberately sits
+// outside both gates: the seller must be able to manage licences on any device.
+const tillElement = (
+  <LicenseProvider>
+    <LicenseGate>
+      <AppLockProvider>
+        <App />
+      </AppLockProvider>
+    </LicenseGate>
+  </LicenseProvider>
+)
+
 // hash routing keeps deep links working even from a static host with no
 // server-side rewrite rules.
 const router = createHashRouter([
-  { path: '/', element: <App />, children: [
+  { path: '/admin', element: <LicenseAdminScreen /> },
+  { path: '/', element: tillElement, children: [
     { index: true, element: <SellScreen /> },
     { path: 'catalog', element: <CatalogScreen /> },
     { path: 'history', element: <HistoryScreen /> },
@@ -38,10 +55,7 @@ const router = createHashRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {/* Above the router: a deep link must not render the till before the lock. */}
-    <AppLockProvider>
-      <RouterProvider router={router} />
-    </AppLockProvider>
+    <RouterProvider router={router} />
   </StrictMode>,
 )
 

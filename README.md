@@ -15,11 +15,20 @@ npm run dev        # http://localhost:5173
 Other scripts:
 
 ```bash
-npm test           # unit, database integration and sync checks
+npm test           # unit, licence, database integration and sync checks
+npm run test:license # licence token and key-format checks only
 npm run build      # typecheck + production build into dist/
 npm run preview    # serve the built app on your LAN, for phone testing
 npm run icons      # regenerate the PWA icon PNGs
 ```
+
+## Commercial licensing
+
+The app can be locked to a seller-issued subscription key. Each key has a device
+allow-list, a shop limit and an offline window. The seller's admin screen is at
+`/#/admin`, outside the till and staff gates. Deployment, key generation, the
+Supabase schema, the Edge Function and the sales workflow are documented in
+[docs/licensing-setup.md](docs/licensing-setup.md).
 
 ## Testing it
 

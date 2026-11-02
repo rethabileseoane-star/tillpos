@@ -33,9 +33,14 @@ export function ProductEditor({ product, onClose }: Props) {
   const parsedPrice = parseAmount(price)
   const parsedCost = parseAmount(cost)
   const profit = parsedPrice !== null && parsedCost !== null ? parsedPrice - parsedCost : null
+  // An empty field means zero, but text that is not a number must not silently
+  // become zero: saving would wipe the stock figure (and record a movement).
+  const parsedStock = stock.trim() === '' ? 0 : Number(stock)
+  const stockValid = Number.isFinite(parsedStock)
   const allValid =
     name.trim().length > 0 &&
     parsedPrice !== null &&
+    stockValid &&
     barcodes.some((b) => isValidBarcode(normalizeBarcode(b)))
 
   const addBarcode = () => {
@@ -78,7 +83,7 @@ export function ProductEditor({ product, onClose }: Props) {
         }
 
         if (product) {
-          const newStock = Number(stock) || 0
+          const newStock = parsedStock
           const stockChanged = newStock !== product.stockQty
           const updated = withSyncMeta(product, {
             ...product,
@@ -114,7 +119,7 @@ export function ProductEditor({ product, onClose }: Props) {
             details: details.trim() || undefined,
             price: parsedPrice,
             cost: parsedCost ?? parsedPrice,
-            stockQty: Number(stock) || 0,
+            stockQty: parsedStock,
             lowStockThreshold: Math.max(0, Number(threshold) || 0),
             category: category.trim() || 'Uncategorised',
             active: true,

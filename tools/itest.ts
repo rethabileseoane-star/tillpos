@@ -13,6 +13,7 @@ import assert from 'node:assert/strict'
 import { db, repairStockCache, TillDatabase } from '../src/db'
 import type { Product } from '../src/db/types'
 import { importProducts, exportProductsCsv } from '../src/features/catalog/csvImport'
+import { exportCatalogPdf } from '../src/features/catalog/exportCatalogPdf'
 import { commitSale, voidSale, adjustStock, businessDate } from '../src/features/sales/salesService'
 import {
   buyStock,
@@ -327,6 +328,19 @@ async function main() {
     assert.match(res.errors[0]!.reason, /price/)
   })
 
+  await check('name and description columns map to the right fields', async () => {
+    await reset()
+    const text = [
+      'barcode,name,description,price,stockQty',
+      '6001234567892,Sugar 1kg,The good stuff,1500,5',
+    ].join('\n')
+    const res = await importProducts(csvFile(text, 'desc.csv'))
+    assert.equal(res.created, 1, JSON.stringify(res.errors))
+    const p = (await productByBarcode('6001234567892'))!
+    assert.equal(p.name, 'Sugar 1kg')
+    assert.equal(p.details, 'The good stuff')
+  })
+
   console.log('lookup')
 
   await check('a barcode resolves, an ambiguous prefix does not', async () => {
@@ -603,6 +617,79 @@ async function main() {
     const text = await (await exportProductsCsv()).text()
     assert.match(text, /barcode,barcodes,name,details,price,cost/)
     assert.match(text, /6001234567892,6001234567892,Sugar 1kg,,1500\.00,1400\.00,55,10,Grocery/)
+  })
+
+  await check('a re-import of the exported catalog keeps every row', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sugar = (await productByBarcode('6001234567892'))!
+    await db.products.update(sugar.id, {
+      barcodes: [sugar.barcode, '6001234567999'],
+    })
+
+    // The export repeats the primary barcode in the "barcodes" column. That is
+    // not a duplicate in the file, so every row must import.
+    const text = await (await exportProductsCsv()).text()
+    const res = await importProducts(csvFile(text, 'roundtrip.csv'))
+
+    assert.equal(res.skipped, 0, `skipped=${res.skipped}: ${JSON.stringify(res.errors)}`)
+    assert.equal(res.created, 0, 're-import created duplicate products')
+    assert.equal(res.updated, 3)
+    assert.equal(await db.products.count(), 3)
+    assert.deepEqual((await productByBarcode('6001234567892'))!.barcodes, [
+      '6001234567892',
+      '6001234567999',
+    ])
+  })
+
+  await check('a barcodes column may repeat the primary barcode', async () => {
+    await reset()
+    const text = [
+      'barcode,barcodes,name,price,cost,stockQty,lowStockThreshold,category',
+      '1111111111111,1111111111111;2222222222222,Multi,10.00,5.00,10,0,Grocery',
+    ].join('\n')
+    const res = await importProducts(csvFile(text, 'aliases.csv'))
+    assert.equal(res.created, 1, JSON.stringify(res.errors))
+    assert.equal(res.skipped, 0)
+    const p = (await productByBarcode('1111111111111'))!
+    assert.deepEqual(p.barcodes, ['1111111111111', '2222222222222'])
+    assert.equal((await lookupProduct('2222222222222'))?.id, p.id, 'alias does not resolve')
+  })
+
+  await check('void restores exact stock when one product has several sale lines', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sugar = (await productByBarcode('6001234567892'))!
+    const line = (barcode: string, qty: number) => ({
+      key: `${barcode}-${qty}`,
+      productId: sugar.id,
+      barcode,
+      name: sugar.name,
+      unitPrice: sugar.price,
+      qty,
+      adHoc: false,
+      stockAtAdd: sugar.stockQty,
+    })
+
+    // The same product on two lines, as when two of its barcodes are scanned
+    // separately. Each line writes its own sale movement.
+    const sale = await commitSale({
+      lines: [line(sugar.barcode, 2), line('6001234567999', 3)],
+      paymentMethod: 'cash',
+      amountTendered: 1000000,
+    })
+    assert.equal(await stockOf('6001234567892'), 35)
+
+    await voidSale(sale.id, 'wrong order')
+    assert.equal(await stockOf('6001234567892'), 40, 'void did not restore the exact stock')
+    assert.equal(await ledgerSum(sugar.id), 40, 'ledger disagrees after void')
+
+    const voids = (
+      await db.stockMovements.where('productId').equals(sugar.id).toArray()
+    )
+      .filter((m) => m.reason === 'void')
+      .map((m) => m.delta)
+    assert.deepEqual(voids.sort((a, b) => a - b), [2, 3], 'each movement must reverse once')
   })
 
   console.log('cart quantity')
@@ -1365,6 +1452,29 @@ async function main() {
     const buf = Buffer.from(await blob.arrayBuffer())
     assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-', 'not a PDF header')
     assert.ok(buf.length > 5000, `suspiciously small PDF: ${buf.length} bytes`)
+    const raw = buf.toString('latin1')
+    for (const title of ['Trial balance', 'Profit & loss statement', 'Balance sheet']) {
+      assert.ok(raw.includes(title), `missing statement in the PDF: ${title}`)
+    }
+  })
+
+  await check('the catalog PDF downloads as a print-ready PDF', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sugar = (await productByBarcode('6001234567892'))!
+    await db.products.update(sugar.id, {
+      name: 'Sugar 1kg — a deliberately long product name that has to wrap inside its column',
+      barcodes: [sugar.barcode, 'LONG-CODE-1234567890123456789012345678901234567890'],
+    })
+    const products = await db.products.toArray()
+    const blob = await exportCatalogPdf(products)
+    assert.equal(blob.type, 'application/pdf')
+    const buf = Buffer.from(await blob.arrayBuffer())
+    assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-', 'not a PDF header')
+    assert.ok(buf.length > 3000, `suspiciously small PDF: ${buf.length} bytes`)
+    const raw = buf.toString('latin1')
+    assert.ok(raw.includes('Product Catalog'), 'catalog heading missing')
+    assert.ok(raw.includes('TOTALS'), 'catalog totals row missing')
   })
 
   console.log('sync config')

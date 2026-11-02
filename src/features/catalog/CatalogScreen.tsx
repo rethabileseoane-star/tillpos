@@ -162,8 +162,8 @@ export function CatalogScreen() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Catalog</h1>
         <span className="text-xs text-slate-400">
-          Showing {filtered.length} of {activeProducts.length} item{
-            activeProducts.length === 1 ? '' : 's'
+          Showing {filtered.length} of {visibleProducts.length} item{
+            visibleProducts.length === 1 ? '' : 's'
           }
           {!readOnly &&
             deletedProducts.length > 0 &&

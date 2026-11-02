@@ -3,8 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db'
 import type { CashInKind, CashMovement, CashReason, Product } from '@/db/types'
 import { formatMaluti, parseAmount } from '@/domain/money'
-import { normalizeBarcode } from '@/domain/barcode'
 import { businessDate } from '@/features/sales/salesService'
+import { lookupProduct } from '@/features/cart/CartContext'
 import {
   buyStock,
   recordCashIn,
@@ -411,7 +411,13 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
 
   const term = search.trim().toLowerCase()
   const matches = useMemo(
-    () => active.filter((p) => !term || p.name.toLowerCase().includes(term) || p.barcode.includes(term)),
+    () =>
+      active.filter(
+        (p) =>
+          !term ||
+          p.name.toLowerCase().includes(term) ||
+          (p.barcodes ?? [p.barcode]).some((b) => b.toLowerCase().includes(term)),
+      ),
     [active, term],
   )
 
@@ -470,9 +476,10 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
 
   const onScanned = async (code: string) => {
     setScanOpen(false)
-    const normalized = normalizeBarcode(code)
-    const found = active.find((p) => p.barcode === normalized)
-    if (!found) {
+    // Resolve aliases and UPC/EAN padding the same way the till does. Looking
+    // only at the primary barcode rejected a product scanned by an alias.
+    const found = await lookupProduct(code)
+    if (!found || found.deletedAt != null || found.active === false) {
       setError(`"${code}" is not in the catalog — add it there first, then buy stock.`)
       return
     }

@@ -11,6 +11,7 @@ import {
 import { useInstall } from '@/features/install/useInstall'
 import { SecurityCard } from '@/features/security/SecurityCard'
 import { ShopCard } from '@/features/shops/ShopCard'
+import { LicenseCard } from './LicenseCard'
 import { loadShopName, saveShopName } from './shopName'
 import { SyncCard } from './SyncCard'
 
@@ -145,6 +146,8 @@ export function SettingsScreen() {
       </div>
 
       <ShopCard />
+
+      <LicenseCard />
 
       <div className="card mt-3">
         <h2 className="text-sm font-semibold">Data on this device</h2>

@@ -3,10 +3,12 @@ dist
 dev-dist
 certs
 tools/.smoke.mjs
+tools/.license.mjs
 tools/.itest.cjs
 tools/.syncstub.cjs
 *.tsbuildinfo
 *.local
+.license-keys.local.json
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
