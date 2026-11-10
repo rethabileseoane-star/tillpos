@@ -46,9 +46,12 @@ export const licenseConfig = {
 
 export const licenseServerConfigured = Boolean(licenseConfig.url && licenseConfig.anonKey)
 
-// Temporary: the licence Edge Function is not deployed yet, so the gate would
-// lock every installation. Keep this true until the function and its secrets are
-// live; set VITE_LICENSE_DORMANT=false and rebuild to re-enable licensing.
+// The gate is live in production builds. `npm run dev` leaves the flag unset,
+// which keeps development dormant so the till opens without a licence server or
+// a key. `.env.production` sets VITE_LICENSE_DORMANT=false for real builds.
+// A rollback is that one line: with it removed, every installation unlocks on
+// its next check-in, which is exactly why it must not be touched while clients
+// are paying.
 export const licenseDormant =
   readEnv('VITE_LICENSE_DORMANT') !== '0' &&
   readEnv('VITE_LICENSE_DORMANT') !== 'false'

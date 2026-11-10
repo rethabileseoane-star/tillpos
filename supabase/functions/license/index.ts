@@ -84,14 +84,34 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+/**
+ * Input caps. Everything a caller sends is unbounded until it is bounded here:
+ * a 10 MB licence key would be hashed and compared, and an unbounded `appVersion`
+ * would end up in the audit table. Real values are far shorter than these.
+ */
+const MAX_KEY_CHARS = 64
+const MAX_DEVICE_CHARS = 24
+const MAX_TOKEN_CHARS = 4096
+const MAX_APP_VERSION_CHARS = 64
+
 function normalizeLicenseKey(value: unknown): string {
-  return text(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return text(value).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_KEY_CHARS)
 }
 
 function normalizeDeviceCode(value: unknown): string {
   const compact = text(value).toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (compact.length > MAX_DEVICE_CHARS) return ''
   if (!compact.startsWith('D') || compact.length !== 9) return compact
   return `D-${compact.slice(1, 5)}-${compact.slice(5)}`
+}
+
+function boundedToken(value: unknown): string {
+  const token = text(value)
+  return token.length > MAX_TOKEN_CHARS ? '' : token
+}
+
+function appVersion(value: unknown): string {
+  return text(value).slice(0, MAX_APP_VERSION_CHARS)
 }
 
 function sha256Hex(value: string): Promise<string> {
@@ -207,7 +227,15 @@ async function verifyToken(token: string): Promise<Claims> {
   } catch {
     throw new ApiError('REFRESH_INVALID', 'The licence session is malformed.', 401)
   }
-  if (claims.iss !== ISSUER || claims.typ !== 'refresh') {
+  if (
+    !claims ||
+    typeof claims !== 'object' ||
+    claims.iss !== ISSUER ||
+    claims.typ !== 'refresh' ||
+    typeof claims.dev !== 'string' ||
+    typeof claims.lic !== 'string' ||
+    !Number.isFinite(claims.exp)
+  ) {
     throw new ApiError('REFRESH_INVALID', 'The licence session is not a refresh token.', 401)
   }
   const now = Math.floor(Date.now() / 1000)
@@ -278,19 +306,22 @@ async function record(
 async function tooManyAttempts(
   supabase: ReturnType<typeof createClient>,
   deviceCode: string,
+  licenseId: string,
 ): Promise<boolean> {
-  if (!deviceCode) return false
+  if (!deviceCode || !licenseId) return false
   const since = new Date(Date.now() - ATTEMPT_WINDOW_MINUTES * 60_000).toISOString()
   const { count } = await supabase
     .from('license_events')
     .select('id', { count: 'exact', head: true })
     .eq('device_code', deviceCode)
-    // Only denials that reached a real licence count towards the lockout. The
-    // device code is shown on the activation screen, so counting "key not
-    // found" here would let anyone who saw it keep that phone locked out just
-    // by spamming junk keys. Guessing a key still has to get past this once the
-    // key is real, and the key space makes blind guessing pointless anyway.
-    .not('license_id', 'is', null)
+    // Scoped to the licence the caller actually reached. Counting by device
+    // alone let anyone with a key of their own lock a stranger's phone out by
+    // replaying that key against a device code shown on its activation screen:
+    // every denial was recorded, the device was throttled, and the real owner
+    // could not check in. A wrong key is not counted at all (it has no licence
+    // to scope to, and counting it would allow the same lockout); the key space
+    // makes blind guessing impractical.
+    .eq('license_id', licenseId)
     .in('event', ['activation_denied', 'check_denied'])
     .gte('created_at', since)
   return typeof count === 'number' && count >= ATTEMPT_LIMIT
@@ -348,9 +379,6 @@ async function activate(
   if (!key || !deviceCode) {
     throw new ApiError('BAD_REQUEST', 'Enter the licence key and device code.', 400)
   }
-  if (await tooManyAttempts(supabase, deviceCode)) {
-    throw new ApiError('TOO_MANY_ATTEMPTS', 'Too many attempts. Try again later.', 429)
-  }
 
   const keyHash = await sha256Hex(key)
   const { data, error } = await supabase
@@ -362,8 +390,14 @@ async function activate(
 
   const license = (data as LicenseRow | null) ?? null
   if (!license) {
-    await record(supabase, 'activation_denied', { reason: 'key_not_found' }, null, deviceCode)
+    // Deliberately not written to the audit table: this endpoint needs no
+    // account, so logging every miss would let anyone grow the table without
+    // limit. Real denials below still carry a licence id and are logged.
     throw new ApiError('LICENSE_NOT_FOUND', 'That licence key was not found.', 404)
+  }
+
+  if (await tooManyAttempts(supabase, deviceCode, license.id)) {
+    throw new ApiError('TOO_MANY_ATTEMPTS', 'Too many attempts. Try again later.', 429)
   }
 
   const device = await loadDevice(supabase, license.id, deviceCode)
@@ -403,7 +437,7 @@ async function activate(
     .eq('id', device!.id)
 
   const tokens = await issueTokens(license, deviceCode)
-  await record(supabase, 'activated', { appVersion: text(body.appVersion) }, license.id, deviceCode)
+  await record(supabase, 'activated', { appVersion: appVersion(body.appVersion) }, license.id, deviceCode)
   return json({ ok: true, ...tokens, license: licenseInfo(license) })
 }
 
@@ -411,13 +445,10 @@ async function heartbeat(
   supabase: ReturnType<typeof createClient>,
   body: Json,
 ): Promise<Response> {
-  const refreshToken = text(body.refreshToken)
+  const refreshToken = boundedToken(body.refreshToken)
   const deviceCode = normalizeDeviceCode(body.deviceCode)
   if (!refreshToken || !deviceCode) {
     throw new ApiError('BAD_REQUEST', 'The licence session is incomplete.', 400)
-  }
-  if (await tooManyAttempts(supabase, deviceCode)) {
-    throw new ApiError('TOO_MANY_ATTEMPTS', 'Too many attempts. Try again later.', 429)
   }
 
   const claims = await verifyToken(refreshToken)
@@ -428,6 +459,9 @@ async function heartbeat(
   const license = await loadLicense(supabase, claims.lic)
   if (!license) {
     throw new ApiError('LICENSE_NOT_FOUND', 'The licence no longer exists.', 404)
+  }
+  if (await tooManyAttempts(supabase, deviceCode, license.id)) {
+    throw new ApiError('TOO_MANY_ATTEMPTS', 'Too many attempts. Try again later.', 429)
   }
   const device = await loadDevice(supabase, license.id, deviceCode)
   try {
@@ -451,7 +485,15 @@ async function heartbeat(
     .eq('id', device!.id)
 
   const tokens = await issueTokens(license, deviceCode)
-  await record(supabase, 'checked_in', { appVersion: text(body.appVersion) }, license.id, deviceCode)
+  // A heartbeat every 15 minutes would add ~96 audit rows per device per day,
+  // which is noise in the activity feed and grows the free-tier database for no
+  // benefit. `last_seen_at` already proves liveness; keep one row every six
+  // hours (and always the first one).
+  const lastSeen = device?.last_seen_at ? Date.parse(device.last_seen_at) : 0
+  const seenRecently = Number.isFinite(lastSeen) && Date.now() - lastSeen < 6 * 60 * 60 * 1000
+  if (!seenRecently) {
+    await record(supabase, 'checked_in', { appVersion: appVersion(body.appVersion) }, license.id, deviceCode)
+  }
   return json({ ok: true, ...tokens, license: licenseInfo(license) })
 }
 
@@ -459,7 +501,7 @@ async function deactivate(
   supabase: ReturnType<typeof createClient>,
   body: Json,
 ): Promise<Response> {
-  const refreshToken = text(body.refreshToken)
+  const refreshToken = boundedToken(body.refreshToken)
   const deviceCode = normalizeDeviceCode(body.deviceCode)
   if (!refreshToken || !deviceCode) {
     throw new ApiError('BAD_REQUEST', 'The licence session is incomplete.', 400)
@@ -495,7 +537,11 @@ Deno.serve(async (request: Request) => {
 
     let body: Json
     try {
-      const parsed: unknown = await request.json()
+      // Read as text so the size can be capped before JSON.parse. Real bodies
+      // are a few hundred bytes; the refresh token is the largest field.
+      const raw = await request.text()
+      if (raw.length > 16_384) throw new Error('too large')
+      const parsed: unknown = JSON.parse(raw)
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error('not an object')
       }
@@ -504,7 +550,7 @@ Deno.serve(async (request: Request) => {
       throw new ApiError('BAD_REQUEST', 'Send a JSON object.', 400)
     }
 
-    const action = text(body.action)
+    const action = text(body.action).slice(0, 32)
     if (action === 'activate') return await activate(supabase, body)
     if (action === 'heartbeat') return await heartbeat(supabase, body)
     if (action === 'deactivate') return await deactivate(supabase, body)

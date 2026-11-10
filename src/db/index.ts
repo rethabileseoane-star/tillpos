@@ -25,14 +25,22 @@ import type {
 export const loadedShop: ShopProfile = getActiveShop()
 
 /** Stable per-install identifier. Stored in localStorage so it survives reloads. */
+let memoryDeviceId: string | null = null
+
 export function getDeviceId(): string {
   const KEY = 'till.deviceId'
-  let id = localStorage.getItem(KEY)
-  if (!id) {
-    id = crypto.randomUUID()
-    localStorage.setItem(KEY, id)
+  try {
+    const id = localStorage.getItem(KEY)
+    if (id) return id
+    const created = crypto.randomUUID()
+    localStorage.setItem(KEY, created)
+    return created
+  } catch {
+    // Private mode or a storage-blocking browser throws on access. A session
+    // id keeps sales writable; the next launch simply gets a new one.
+    memoryDeviceId ??= crypto.randomUUID()
+    return memoryDeviceId
   }
-  return id
 }
 
 export class TillDatabase extends Dexie {

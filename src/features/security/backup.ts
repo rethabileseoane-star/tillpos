@@ -15,6 +15,7 @@ import type {
 } from '@/db/types'
 import { localDate } from '@/domain/time'
 import { downloadBlob } from '@/features/catalog/csvImport'
+import { LICENSE_DEVICE_KEY } from '@/licensing/storage'
 
 /**
  * Emergency backup and wipe for the "forgot PIN" path.
@@ -156,10 +157,28 @@ export async function eraseLocalData(): Promise<void> {
     else await Dexie.delete(name)
   }
 
+  // The phone is still the same phone. Keep the licence device code so a shop
+  // that forgot its PIN does not also need the seller to allow-list a new code;
+  // the tokens are still removed, so the till must be activated again.
+  let deviceCode: string | null = null
+  try {
+    deviceCode = localStorage.getItem(LICENSE_DEVICE_KEY)
+  } catch {
+    deviceCode = null
+  }
+
   const keys: string[] = []
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
     if (key?.startsWith('till.') || key?.startsWith('sb-')) keys.push(key)
   }
   for (const key of keys) localStorage.removeItem(key)
+
+  if (deviceCode) {
+    try {
+      localStorage.setItem(LICENSE_DEVICE_KEY, deviceCode)
+    } catch {
+      // Storage refused the write; the next launch simply asks for a new code.
+    }
+  }
 }

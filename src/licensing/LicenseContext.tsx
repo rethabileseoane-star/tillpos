@@ -106,6 +106,9 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
   const [status, setStatusState] = useState<LicenseStatus>('checking')
   const [claims, setClaimsState] = useState<LicenseClaims | null>(null)
   const [lastCheckAt, setLastCheckAt] = useState<number | null>(null)
+  const [metaBusinessName, setMetaBusinessName] = useState<string | null>(
+    () => loadMeta().businessName,
+  )
   const [online, setOnline] = useState(() => navigator.onLine)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -204,6 +207,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
       setClaims(accessClaims)
       setStatus('valid')
       setLastCheckAt(checkedAt)
+      setMetaBusinessName(accessClaims.name)
       setError(null)
       setBusy(false)
       busyRef.current = false
@@ -394,6 +398,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     const meta = loadMeta()
     tokensRef.current = saved
     setLastCheckAt(meta.lastCheckAt)
+    setMetaBusinessName(meta.businessName)
 
     void (async () => {
       if (saved.accessToken) {
@@ -491,7 +496,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
       status,
       claims,
       deviceCode,
-      businessName: claims?.name ?? loadMeta().businessName,
+      businessName: claims?.name ?? metaBusinessName,
       lastCheckAt,
       accessExpiresAt,
       licenseExpiresAt: licenseEndsAt,
@@ -514,6 +519,7 @@ export function LicenseProvider({ children }: { children: ReactNode }) {
     deviceCode,
     error,
     lastCheckAt,
+    metaBusinessName,
     nowTick,
     online,
     showActivation,

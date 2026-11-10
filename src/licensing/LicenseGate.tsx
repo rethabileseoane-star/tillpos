@@ -223,9 +223,10 @@ function ActivationScreen() {
 
       <div className="mt-5 rounded-xl border border-ink-700 bg-ink-800/60 p-3 text-[11px] leading-relaxed text-slate-500">
         <strong className="font-semibold text-slate-300">Offline working.</strong>{' '}
-        After activation this till works without internet for up to 24 hours
-        between licence checks. Connect at least once a day to keep it open. A
-        licence check never deletes sales, stock or cash records.
+        After activation this till works without internet between licence checks
+        (24 hours by default; your supplier sets the exact period). Connect at
+        least that often to keep it open. A licence check never deletes sales,
+        stock or cash records.
       </div>
     </LicenseShell>
   )

@@ -184,11 +184,26 @@ Android/iOS app later.
 - The Edge Function uses the service-role key only inside Supabase. The app only
   has the public anon key.
 - Tokens are ES256-signed. The app has only the public key.
-- Activation and check-in are rate-limited per device: 20 denied attempts in 10
-  minutes returns `TOO_MANY_ATTEMPTS`.
+- Activation and check-in are rate-limited per licence **and** device: 20 denied
+  attempts in 10 minutes returns `TOO_MANY_ATTEMPTS`. Scoping to the licence is
+  deliberate: counting by device code alone let anyone with a key of their own
+  lock a stranger's phone out by replaying that key against the code shown on its
+  activation screen. A key that is not found is not audited or counted, so the
+  unauthenticated endpoint cannot be used to grow the database without limit.
+- The routine check-in audit row is written at most every six hours per device.
+  `license_devices.last_seen_at` is updated on every check-in, so the admin list
+  still shows liveness without adding about 96 rows per phone per day.
+- The activation screen's device code is not a secret. The licence key is. Anyone
+  who has the key can lock that licence's own device out with a burst of bad
+  attempts, so treat a leaked key as compromised and regenerate it in the admin
+  screen.
 - A determined person can still patch a web app's JavaScript. This stops normal
   sharing, key resale and copied installs. Native app attestation (Play Integrity
   or App Attest) is the next level if you need it.
+- Offline expiry trusts the phone's clock. Someone who controls the device can
+  move its date back and stretch the offline window. The server refuses a stale
+  refresh token, but there is no software-only defence against an owner-controlled
+  clock on an offline device; keep `offline_hours` short for high-value clients.
 
 ## Keeping the licence server awake
 

@@ -59,6 +59,7 @@ import {
   outstandingCredit,
 } from '../src/features/credit/credit'
 import { remoteWins, stripServerFields, withShopId, SYNC_ENTITIES } from '../src/sync/merge'
+import { unparseSafe } from '../src/domain/csv'
 import {
   cleanShopCode,
   dbNameForShop,
@@ -1226,6 +1227,34 @@ check('lockout streaks are separate per staff account', () => {
 
 check('cooldownRemaining never reports a negative wait', () => {
   assert.equal(cooldownRemaining({ fails: 1, until: 10, last: 0 }, 50), 0)
+})
+
+check('csv export neutralises spreadsheet formulas', () => {
+  const csv = unparseSafe([
+    {
+      item: '=HYPERLINK("http://example.test","tap")',
+      note: '@SUM(1+1)',
+      amount: '-12.50',
+      name: '-stock item',
+      stock: 3,
+    },
+  ])
+  assert.ok(csv.includes(`"'=HYPERLINK(""http://example.test"",""tap"")"`), csv)
+  assert.ok(csv.includes(`'@SUM(1+1)`), csv)
+  // A negative money column must stay numeric.
+  assert.ok(csv.includes(',-12.50,'), csv)
+  assert.ok(csv.includes(`'-stock item`), csv)
+  assert.ok(csv.includes(',3'), csv)
+})
+
+check('csv neutralising leaves ordinary text and numbers alone', () => {
+  const csv = unparseSafe([
+    ['bread', 12.5, 'ok'],
+    ['a=b', '+27 99 123', ''],
+  ])
+  assert.ok(csv.includes('bread,12.5,ok'))
+  assert.ok(csv.includes('a=b'))
+  assert.ok(csv.includes("'+27 99 123"))
 })
 
 console.log(`\n${passed} checks passed`)

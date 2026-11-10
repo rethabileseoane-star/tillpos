@@ -1,5 +1,5 @@
-import Papa from 'papaparse'
 import { db } from '@/db'
+import { unparseSafe } from '@/domain/csv'
 import { summariseCash } from '@/features/cash/cashService'
 import { creditTotals } from '@/features/credit/credit'
 import { totalTabBalance } from '@/features/tabs/tabs'
@@ -76,7 +76,7 @@ export async function exportSalesCsv(dates?: string[]): Promise<Blob> {
   })
 
   const voided = sales.filter((s) => s.status === 'voided')
-  const csv = Papa.unparse(rows, { columns: header })
+  const csv = unparseSafe(rows, { columns: header })
   const net = completed.reduce((s, x) => s + x.total, 0)
 
   // Drawer figures for the accountant. Balance is all-time; the rest is the

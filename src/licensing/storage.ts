@@ -5,7 +5,8 @@ import { generateDeviceCode, normalizeDeviceCode } from './format'
  * are signed and verified before use. Storage only makes offline operation
  * possible and gives the activation screen a stable device code.
  */
-const DEVICE_KEY = 'till.license.device.v1'
+export const LICENSE_DEVICE_KEY = 'till.license.device.v1'
+const DEVICE_KEY = LICENSE_DEVICE_KEY
 const ACCESS_KEY = 'till.license.access.v1'
 const REFRESH_KEY = 'till.license.refresh.v1'
 const KEY_KEY = 'till.license.key.v1'

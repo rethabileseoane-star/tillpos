@@ -1,6 +1,7 @@
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 import { db, withSyncMeta } from '@/db'
+import { unparseSafe } from '@/domain/csv'
 import type { Product, ProductDraft } from '@/db/types'
 import { parseAmount, type Cents } from '@/domain/money'
 import { normalizeBarcode, isValidBarcode } from '@/domain/barcode'
@@ -262,7 +263,7 @@ export async function exportProductsCsv(): Promise<Blob> {
     lowStockThreshold: p.lowStockThreshold,
     category: p.category,
   }))
-  return new Blob([Papa.unparse(rows)], { type: 'text/csv;charset=utf-8' })
+  return new Blob([unparseSafe(rows)], { type: 'text/csv;charset=utf-8' })
 }
 
 /** Trigger a browser download without a server round-trip. */

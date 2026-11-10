@@ -22,12 +22,12 @@
     "@supabase/supabase-js": "^2.117.2",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^4.4.0",
-    "jspdf": "^2.5.1",
+    "jspdf": "^4.2.1",
     "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zxing-wasm": "^2.2.0"
   },
   "devDependencies": {

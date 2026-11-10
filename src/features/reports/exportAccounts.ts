@@ -1,4 +1,4 @@
-import Papa from 'papaparse'
+import { unparseSafe } from '@/domain/csv'
 import { db } from '@/db'
 import { localDate, localTime } from '@/domain/time'
 import {
@@ -51,7 +51,7 @@ export async function exportCashLedgerCsv(dates?: string[]): Promise<Blob> {
   }
 
   const header = ['date', 'time', 'type', 'note', 'amount_mwk', 'running_balance_mwk']
-  const csv = Papa.unparse(rows, { columns: header })
+  const csv = unparseSafe(rows, { columns: header })
 
   const footer = [
     '',
@@ -94,7 +94,7 @@ export async function exportStockLedgerCsv(start?: number, end?: number): Promis
   }
 
   const header = ['date', 'barcode', 'product', 'reason', 'delta', 'unit_cost_mwk', 'value_mwk']
-  const csv = Papa.unparse(rows, { columns: header })
+  const csv = unparseSafe(rows, { columns: header })
 
   const valued = products
     .filter((p) => p.stockQty !== 0)
@@ -110,7 +110,7 @@ export async function exportStockLedgerCsv(start?: number, end?: number): Promis
     })
   const totalValue = products.reduce((s, p) => s + p.stockQty * (p.cost ?? p.price ?? 0), 0)
   const valuationPapa = valued.length
-    ? Papa.unparse(valued, {
+    ? unparseSafe(valued, {
         columns: ['barcode', 'product', 'stock_qty', 'unit_cost_mwk', 'value_mwk'],
       })
     : ''
@@ -177,7 +177,7 @@ export async function exportCreditJournalCsv(dates: string[]): Promise<Blob> {
     'write_off_reason',
     'written_off_by',
   ]
-  const csv = Papa.unparse(rows, { columns: header })
+  const csv = unparseSafe(rows, { columns: header })
 
   const totals = creditTotals(sales, cash, dates)
   const receipts = cash
@@ -194,7 +194,7 @@ export async function exportCreditJournalCsv(dates: string[]): Promise<Blob> {
       }
     })
   const receiptCsv = receipts.length
-    ? Papa.unparse(receipts, {
+    ? unparseSafe(receipts, {
         columns: ['date', 'customer', 'receipt_no', 'amount_mwk', 'received_by', 'note'],
       })
     : '(none)'
@@ -215,7 +215,7 @@ export async function exportCreditJournalCsv(dates: string[]): Promise<Blob> {
     ]
   })
   const writeOffCsv = writeOffs.length
-    ? Papa.unparse(writeOffs, {
+    ? unparseSafe(writeOffs, {
         columns: ['date', 'customer', 'receipt_no', 'amount_mwk', 'reason', 'written_off_by'],
       })
     : '(none)'
@@ -268,7 +268,7 @@ export async function exportCustomerTabsCsv(dates: string[]): Promise<Blob> {
     note: row.tab.note ?? '',
   }))
   const summaryCsv = summaryRows.length
-    ? Papa.unparse(summaryRows, {
+    ? unparseSafe(summaryRows, {
         columns: ['customer', 'phone', 'balance_mwk', 'entries', 'note'],
       })
     : '(none)'
@@ -288,7 +288,7 @@ export async function exportCustomerTabsCsv(dates: string[]): Promise<Blob> {
         staff: entry.staffName ?? sale?.cashierName ?? '',
       }
     })
-  const csv = Papa.unparse(rows, {
+  const csv = unparseSafe(rows, {
     columns: ['date', 'time', 'customer', 'type', 'amount_mwk', 'receipt_no', 'note', 'staff'],
   })
 
@@ -360,7 +360,7 @@ export async function exportStatementsCsv(dates: string[]): Promise<Blob> {
     { item: 'Bad debts written off', amount_mwk: (stmt.badDebts / 100).toFixed(2) },
     { item: 'NET PROFIT', amount_mwk: (stmt.netProfit / 100).toFixed(2) },
   ]
-  const csv = Papa.unparse(rows, { columns: ['item', 'amount_mwk'] })
+  const csv = unparseSafe(rows, { columns: ['item', 'amount_mwk'] })
 
   const period = `${dates[0] ?? 'start'} to ${dates.at(-1) ?? 'now'}`
   const footer = [
