@@ -1,5 +1,6 @@
 node_modules
 dist
+.agents
 dev-dist
 certs
 tools/.smoke.mjs

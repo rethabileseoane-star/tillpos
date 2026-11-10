@@ -195,7 +195,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 className={`btn !py-2.5 text-sm ${
-                  method === 'cash' ? 'bg-cash-500 text-ink-900' : 'bg-ink-700'
+                  method === 'cash' ? 'bg-cash-500 text-on-accent' : 'bg-ink-700'
                 }`}
                 onClick={() => setMethod('cash')}
               >
@@ -203,7 +203,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
               </button>
               <button
                 className={`btn !py-2.5 text-sm ${
-                  method === 'credit' ? 'bg-cash-500 text-ink-900' : 'bg-ink-700'
+                  method === 'credit' ? 'bg-cash-500 text-on-accent' : 'bg-ink-700'
                 }`}
                 onClick={() => setMethod('credit')}
               >
@@ -411,7 +411,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
 
         {stage === 'done' && sale && (
           <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 animate-pop items-center justify-center rounded-full bg-cash-500 text-ink-900 shadow-lift">
+            <div className="mx-auto flex h-14 w-14 animate-pop items-center justify-center rounded-full bg-cash-500 text-on-accent shadow-lift">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="h-7 w-7">
                 <path d="M20 6L9 17l-5-5" />
               </svg>

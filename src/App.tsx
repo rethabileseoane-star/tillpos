@@ -106,7 +106,7 @@ function InstallBanner({ needed, canInstall }: { needed: boolean; canInstall: bo
       {canInstall && (
         <button
           onClick={() => void promptInstall()}
-          className="shrink-0 rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-ink-900 active:bg-amber-300"
+          className="shrink-0 rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-on-accent active:bg-amber-300"
         >
           Install
         </button>

@@ -1,20 +1,74 @@
 /** @type {import('tailwindcss').Config} */
+
+// Every colour below resolves through a CSS variable defined in src/index.css.
+// That lets the whole app switch between the dark and light palettes without a
+// `dark:` class on every element. Values are space-separated RGB channels so
+// Tailwind opacity modifiers (bg-ink-800/60) keep working.
+const tone = (name) => `rgb(var(--${name}) / <alpha-value>)`
+
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
         ink: {
-          900: '#0b1120',
-          800: '#0f172a',
-          700: '#1e293b',
-          600: '#334155',
-          500: '#475569',
+          900: tone('ink-900'),
+          800: tone('ink-800'),
+          700: tone('ink-700'),
+          600: tone('ink-600'),
+          500: tone('ink-500'),
         },
         cash: {
-          400: '#34d399',
-          500: '#10b981',
-          600: '#059669',
+          300: tone('cash-300'),
+          400: tone('cash-400'),
+          500: tone('cash-500'),
+          600: tone('cash-600'),
+        },
+        // Text and icons that sit on a bright accent button. Dark on the dark
+        // theme's neon green, white on the light theme's deeper green.
+        'on-accent': tone('on-accent'),
+        slate: {
+          100: tone('slate-100'),
+          200: tone('slate-200'),
+          300: tone('slate-300'),
+          400: tone('slate-400'),
+          500: tone('slate-500'),
+          600: tone('slate-600'),
+          700: tone('slate-700'),
+        },
+        amber: {
+          200: tone('amber-200'),
+          300: tone('amber-300'),
+          400: tone('amber-400'),
+          500: tone('amber-500'),
+        },
+        red: {
+          200: tone('red-200'),
+          300: tone('red-300'),
+          400: tone('red-400'),
+          500: tone('red-500'),
+          600: tone('red-600'),
+          900: tone('red-900'),
+        },
+        sky: {
+          300: tone('sky-300'),
+          400: tone('sky-400'),
+          500: tone('sky-500'),
+        },
+        rose: {
+          200: tone('rose-200'),
+          300: tone('rose-300'),
+          500: tone('rose-500'),
+        },
+        // Info / loan / ad-hoc badges. Emerald stays a literal colour because it
+        // is only used over the black camera preview.
+        indigo: {
+          300: tone('indigo-300'),
+          500: tone('indigo-500'),
+        },
+        violet: {
+          300: tone('violet-300'),
+          500: tone('violet-500'),
         },
       },
       fontFamily: {
@@ -28,10 +82,9 @@ export default {
         price: ['2.25rem', { lineHeight: '2.5rem', letterSpacing: '-0.02em' }],
       },
       boxShadow: {
-        // From TailAdmin's shadow tokens, darkened for a dark theme: cards
-        // sit on a faint ground shadow instead of floating border-only.
-        soft: '0 1px 2px 0 rgba(0, 0, 0, 0.45)',
-        lift: '0 12px 32px -8px rgba(0, 0, 0, 0.6)',
+        // Ground shadow for cards; light theme softens it via the variable.
+        soft: 'var(--shadow-soft)',
+        lift: 'var(--shadow-lift)',
       },
       keyframes: {
         beep: {

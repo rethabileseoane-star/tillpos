@@ -78,7 +78,7 @@ export function BarcodeScanSheet({ title, onDetected, onClose }: Props) {
           {scanning && (
             <>
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="relative h-24 w-3/4 rounded-xl border-2 border-cash-400/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
+                <div className="relative h-24 w-3/4 rounded-xl border-2 border-emerald-400/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
                   <span className="absolute -left-0.5 -top-0.5 h-3 w-3 rounded-tl-lg border-l-4 border-t-4 border-white" />
                   <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-tr-lg border-r-4 border-t-4 border-white" />
                   <span className="absolute -bottom-0.5 -left-0.5 h-3 w-3 rounded-bl-lg border-b-4 border-l-4 border-white" />
@@ -92,7 +92,7 @@ export function BarcodeScanSheet({ title, onDetected, onClose }: Props) {
                     onClick={scanner.toggleTorch}
                     aria-label="Toggle torch"
                     className={`rounded-full p-3 backdrop-blur ${
-                      scanner.torchOn ? 'bg-cash-500 text-ink-900' : 'bg-ink-900/70 text-white'
+                      scanner.torchOn ? 'bg-cash-500 text-on-accent' : 'bg-black/60 text-white'
                     }`}
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
@@ -103,10 +103,10 @@ export function BarcodeScanSheet({ title, onDetected, onClose }: Props) {
               )}
 
               {scanner.status === 'scanning' && (
-                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-ink-900/70 px-2.5 py-1 text-[10px] text-slate-300 backdrop-blur">
+                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[10px] text-white/80 backdrop-blur">
                   <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cash-400 opacity-75" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cash-400" />
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                   </span>
                   {RETAIL_FORMATS.length} formats{scanner.nativeApi ? ' · native' : ' · wasm'}
                 </div>

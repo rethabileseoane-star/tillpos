@@ -98,7 +98,7 @@ export function SellScreen() {
 
         {/* Confirmation overlay after a successful read. */}
         {flash && (
-          <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 animate-beep rounded-xl bg-cash-500 px-4 py-2.5 text-ink-900 shadow-lift">
+          <div className="absolute inset-x-3 bottom-3 flex items-center gap-2 animate-beep rounded-xl bg-cash-500 px-4 py-2.5 text-on-accent shadow-lift">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="h-4 w-4 shrink-0">
               <path d="M20 6L9 17l-5-5" />
             </svg>
@@ -113,9 +113,9 @@ export function SellScreen() {
 
         {/* The owner can see the drawer; a cashier cannot. */}
         {isOwner && (
-          <div className="absolute left-3 top-3 rounded-full bg-ink-900/70 px-3 py-1.5 text-xs backdrop-blur">
-            <span className="text-slate-400">Cash </span>
-            <span className="font-mono font-semibold text-cash-400">{formatMaluti(cash)}</span>
+          <div className="absolute left-3 top-3 rounded-full bg-black/60 px-3 py-1.5 text-xs backdrop-blur">
+            <span className="text-white/70">Cash </span>
+            <span className="font-mono font-semibold text-emerald-300">{formatMaluti(cash)}</span>
           </div>
         )}
 
@@ -127,7 +127,7 @@ export function SellScreen() {
                 onClick={scanner.toggleTorch}
                 aria-label="Toggle torch"
                 className={`rounded-full p-3 backdrop-blur ${
-                  scanner.torchOn ? 'bg-cash-500 text-ink-900' : 'bg-ink-900/70 text-white'
+                  scanner.torchOn ? 'bg-cash-500 text-on-accent' : 'bg-black/60 text-white'
                 }`}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
@@ -138,7 +138,7 @@ export function SellScreen() {
             <button
               onClick={scanner.stop}
               aria-label="Stop scanner"
-              className="rounded-full bg-ink-900/70 p-3 text-white backdrop-blur"
+              className="rounded-full bg-black/60 p-3 text-white backdrop-blur"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
                 <path d="M18 6L6 18M6 6l12 12" />

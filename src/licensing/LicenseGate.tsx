@@ -21,7 +21,7 @@ export function LicenseGate({ children }: { children: ReactNode }) {
       <>
         {children}
         <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center">
-          <div className="rounded-b-lg bg-amber-400 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-900 shadow-lg">
+          <div className="rounded-b-lg bg-amber-400 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-on-accent shadow-lg">
             Dev build · licence checks off
           </div>
         </div>
@@ -44,7 +44,7 @@ function LicenseShell({
     <div className="flex min-h-dvh flex-col bg-ink-900">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-8">
         <div className="mb-7 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cash-500 font-bold text-ink-900">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cash-500 font-bold text-on-accent">
             T
           </div>
           <div>

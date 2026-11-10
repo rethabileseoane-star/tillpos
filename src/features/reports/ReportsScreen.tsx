@@ -110,7 +110,7 @@ export function ReportsScreen() {
             key={d}
             onClick={() => setDays(d)}
             className={`btn flex-1 !py-2 text-sm ${
-              days === d ? 'bg-cash-500 text-ink-900' : 'bg-ink-700'
+              days === d ? 'bg-cash-500 text-on-accent' : 'bg-ink-700'
             }`}
           >
             {d} days

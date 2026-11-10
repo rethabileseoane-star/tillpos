@@ -15,6 +15,7 @@ import { TabsScreen } from '@/features/tabs/TabsScreen'
 import { MoneyScreen } from '@/features/money/MoneyScreen'
 import { ReportsScreen } from '@/features/reports/ReportsScreen'
 import { SettingsScreen } from '@/features/settings/SettingsScreen'
+import { ThemeProvider } from '@/ui/theme'
 import './index.css'
 
 /**
@@ -64,7 +65,9 @@ if (licenseDormant) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <ThemeProvider>
+      <RouterProvider router={router} />
+    </ThemeProvider>
   </StrictMode>,
 )
 
