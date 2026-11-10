@@ -13,9 +13,21 @@ import { useLicense } from './LicenseContext'
 export function LicenseGate({ children }: { children: ReactNode }) {
   const license = useLicense()
 
-  // The licence Edge Function is not deployed yet. Keep the till usable in the
-  // meantime; set VITE_LICENSE_DORMANT=false and rebuild to turn licensing on.
-  if (licenseDormant) return <>{children}</>
+  // Development only; see licenseDormant. A production build cannot reach this
+  // branch, and the ribbon makes a dev session impossible to mistake for the
+  // deployed app.
+  if (licenseDormant) {
+    return (
+      <>
+        {children}
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] flex justify-center">
+          <div className="rounded-b-lg bg-amber-400 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-900 shadow-lg">
+            Dev build · licence checks off
+          </div>
+        </div>
+      </>
+    )
+  }
 
   if (license.status === 'checking') return <LicenseBoot />
   if (license.status === 'activation') return <ActivationScreen />

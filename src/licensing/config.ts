@@ -46,12 +46,9 @@ export const licenseConfig = {
 
 export const licenseServerConfigured = Boolean(licenseConfig.url && licenseConfig.anonKey)
 
-// The gate is live in production builds. `npm run dev` leaves the flag unset,
-// which keeps development dormant so the till opens without a licence server or
-// a key. `.env.production` sets VITE_LICENSE_DORMANT=false for real builds.
-// A rollback is that one line: with it removed, every installation unlocks on
-// its next check-in, which is exactly why it must not be touched while clients
-// are paying.
-export const licenseDormant =
-  readEnv('VITE_LICENSE_DORMANT') !== '0' &&
-  readEnv('VITE_LICENSE_DORMANT') !== 'false'
+// Only `npm run dev` runs without a licence. This is not read from an env file:
+// a production build must never be able to ship unlocked because a variable was
+// missing, misspelled or dropped from the host's settings. Vite inlines
+// `import.meta.env.DEV` as false, so the dormant branch is eliminated from the
+// built bundle entirely.
+export const licenseDormant = import.meta.env.DEV

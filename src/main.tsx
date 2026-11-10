@@ -7,6 +7,7 @@ import { AppLockProvider, useAppLock } from '@/features/security/LockContext'
 import { LicenseAdminScreen } from '@/features/admin/LicenseAdminScreen'
 import { LicenseGate } from '@/licensing/LicenseGate'
 import { LicenseProvider } from '@/licensing/LicenseContext'
+import { licenseDormant } from '@/licensing/config'
 import { SellScreen } from '@/features/sell/SellScreen'
 import { CatalogScreen } from '@/features/catalog/CatalogScreen'
 import { HistoryScreen } from '@/features/history/HistoryScreen'
@@ -54,6 +55,12 @@ const router = createHashRouter([
     { path: 'settings', element: <OwnerOnly><SettingsScreen /></OwnerOnly> },
   ]},
 ])
+
+if (licenseDormant) {
+  console.warn(
+    '[till] Development build: licence checks are OFF. Production builds always require a licence.',
+  )
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
