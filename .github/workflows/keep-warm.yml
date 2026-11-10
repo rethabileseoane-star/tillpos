@@ -1,0 +1,28 @@
+name: Keep the licence server awake
+
+# A free Supabase project is paused after about a week without database
+# activity, and a paused project takes licence activation and check-in down with
+# it. Every client would then lock out once its offline token expired, which is
+# exactly what you do not want while a shop is trading.
+#
+# One ping a day is enough to stop the inactivity clock from reaching that
+# week. The key below is the public anon key that already ships in the app
+# bundle; it is not a secret and it cannot read the licence tables.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the licence function
+        run: |
+          curl -fsS --max-time 30 \
+            -X POST "https://srcbrlegjewchazdocvr.supabase.co/functions/v1/license" \
+            -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyY2JybGVnamV3Y2hhemRvY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3NTAwOTMsImV4cCI6MjEwODMyNjA5M30.ZswF7pQ7lIQirGIznPl2W3Cc6SpzEIKFU2TPu3gw_C0" \
+            -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNyY2JybGVnamV3Y2hhemRvY3ZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3NTAwOTMsImV4cCI6MjEwODMyNjA5M30.ZswF7pQ7lIQirGIznPl2W3Cc6SpzEIKFU2TPu3gw_C0" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"ping"}'

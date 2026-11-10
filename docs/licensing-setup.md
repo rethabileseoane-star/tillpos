@@ -190,6 +190,31 @@ Android/iOS app later.
   sharing, key resale and copied installs. Native app attestation (Play Integrity
   or App Attest) is the next level if you need it.
 
+## Keeping the licence server awake
+
+A free Supabase project is paused after about a week without database activity.
+A paused project takes activation and check-in down with it: every phone keeps
+working until its 24-hour offline token runs out, then locks and cannot renew.
+Restoring is a click, but it happens at the worst possible moment.
+
+The function therefore has a `ping` action that performs one real query against
+`public.licenses`. JWT verification stays on, so it is not an open endpoint and
+it cannot read anything back.
+
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/license" \
+  -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
+  -H 'Content-Type: application/json' -d '{"action":"ping"}'
+```
+
+`.github/workflows/keep-warm.yml` calls it once a day (03:17 UTC) and can also be
+run by hand from the Actions tab. The key in that file is the public anon key
+that already ships in the app bundle; it is not a secret.
+
+A paused project can be restored from the dashboard within a year. If a client
+ever reports that the till will not unlock while their internet is fine, check
+the Supabase project state first.
+
 ## Before you ship
 
 Existing installations have no licence token. Issue a licence for each existing

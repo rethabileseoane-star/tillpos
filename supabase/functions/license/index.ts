@@ -285,6 +285,12 @@ async function tooManyAttempts(
     .from('license_events')
     .select('id', { count: 'exact', head: true })
     .eq('device_code', deviceCode)
+    // Only denials that reached a real licence count towards the lockout. The
+    // device code is shown on the activation screen, so counting "key not
+    // found" here would let anyone who saw it keep that phone locked out just
+    // by spamming junk keys. Guessing a key still has to get past this once the
+    // key is real, and the key space makes blind guessing pointless anyway.
+    .not('license_id', 'is', null)
     .in('event', ['activation_denied', 'check_denied'])
     .gte('created_at', since)
   return typeof count === 'number' && count >= ATTEMPT_LIMIT
@@ -502,6 +508,17 @@ Deno.serve(async (request: Request) => {
     if (action === 'activate') return await activate(supabase, body)
     if (action === 'heartbeat') return await heartbeat(supabase, body)
     if (action === 'deactivate') return await deactivate(supabase, body)
+    if (action === 'ping') {
+      // Keeps a free Supabase project from being paused for inactivity. A paused
+      // project takes the whole licence server down, so every client would lock
+      // out as soon as its offline token expires. JWT verification is on, so
+      // this is not an open endpoint.
+      const { error } = await supabase
+        .from('licenses')
+        .select('id', { count: 'exact', head: true })
+      if (error) throw new ApiError('SERVER_ERROR', 'Could not reach the licence database.', 500)
+      return json({ ok: true, serverTime: Date.now() })
+    }
     throw new ApiError('BAD_REQUEST', 'Unknown licence action.', 400)
   } catch (error) {
     if (error instanceof ApiError) return fail(error)

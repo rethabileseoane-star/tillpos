@@ -12,3 +12,4 @@ tools/.syncstub.cjs
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+supabase/.temp/

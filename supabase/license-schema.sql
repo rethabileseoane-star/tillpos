@@ -81,6 +81,12 @@ create index if not exists license_devices_code_idx
 create index if not exists license_events_license_idx
   on public.license_events (license_id, created_at desc);
 
+-- The rate-limit check in the Edge Function filters on device_code and a time
+-- window, so it needs its own index. Without this every activation scans the
+-- whole audit table.
+create index if not exists license_events_device_idx
+  on public.license_events (device_code, created_at desc);
+
 create index if not exists licenses_expiry_idx
   on public.licenses (expires_at);
 
