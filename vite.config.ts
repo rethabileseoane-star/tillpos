@@ -30,12 +30,13 @@ function lanHttps() {
 /**
  * A short fingerprint of this build, shown in Settings.
  *
- * Netlify sets COMMIT_REF on every deploy, so the shopkeeper can look at the
- * phone and tell instantly whether it is running the latest push. A local
- * build falls back to the date.
+ * Cloudflare Pages sets CF_PAGES_COMMIT_SHA and Netlify sets COMMIT_REF, so the
+ * shopkeeper can look at the phone and tell instantly whether it is running the
+ * latest push. A local build falls back to the date.
  */
 const buildId =
-  process.env.COMMIT_REF?.slice(0, 7) ?? new Date().toISOString().slice(0, 10)
+  (process.env.CF_PAGES_COMMIT_SHA ?? process.env.COMMIT_REF)?.slice(0, 7) ??
+  new Date().toISOString().slice(0, 10)
 
 export default defineConfig({
   define: {

@@ -1,0 +1,8 @@
+# Cloudflare Pages redirects.
+#
+# The app is a single-page app: every route lives behind the hash router and
+# /index.html must answer any path that is not a real file. Without this, a
+# reload on a deep link returns a 404 from the CDN.
+#
+# 200 means "rewrite", not "redirect": the URL in the address bar stays put.
+/*    /index.html   200

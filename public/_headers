@@ -1,0 +1,53 @@
+# Cloudflare Pages response headers.
+#
+# This is the Cloudflare equivalent of the [[headers]] blocks that used to live
+# in netlify.toml. Keep the two in sync until the Netlify site is retired.
+#
+# Two parser rules to respect when editing:
+#   - a comment must start at the beginning of the line, never indented,
+#     because every indented line is read as a "Name: value" header;
+#   - rules merge, so a request to /sw.js receives its own Cache-Control plus
+#     everything under /*. Cache-Control is deliberately absent from /* so it
+#     cannot fight the per-file rules below.
+
+# The service worker and the HTML shell must never be served from a stale
+# cache, otherwise a new deploy can take a long time to reach an installed PWA.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.webmanifest
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Vite fingerprints these filenames, so a changed file always gets a new URL.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Everything below applies to the whole site.
+#
+# Permissions-Policy keeps the camera on for this origin because the till scans
+# barcodes with it. Nothing else is needed: the app never records audio, never
+# asks for a location, and never touches USB or Payment Request.
+#
+# X-Robots-Tag keeps a POS out of search results, including the pages.dev URL
+# and any custom domain added later.
+#
+# The Content-Security-Policy is tailored to what the app actually loads:
+#   'wasm-unsafe-eval'  zxing-wasm compiles its barcode decoder
+#   worker-src blob:    ...inside a worker spawned from a blob
+#   connect-src         each shop enters its own Supabase project in Settings
+#                       (see src/sync/config.ts) and realtime uses wss, so this
+#                       must stay https://*.supabase.co. Narrowing it to one
+#                       project ref breaks client sync silently.
+#   img-src blob:       receipt and label images
+#   No external fonts or CDNs are used, so nothing else is allowed.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), usb=(), payment=()
+  X-Robots-Tag: noindex, nofollow
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'

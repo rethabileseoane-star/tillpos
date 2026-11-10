@@ -22,6 +22,31 @@ npm run preview    # serve the built app on your LAN, for phone testing
 npm run icons      # regenerate the PWA icon PNGs
 ```
 
+## Deploying
+
+The app is a static bundle: `npm run build` writes `dist/` and nothing on the
+server is involved. Cloudflare Pages builds and serves it from the repo on every
+push to `main`.
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Environment variable | `NODE_VERSION=22` |
+
+Two files in `public/` only matter at deploy time:
+
+- `_redirects` sends unknown paths to `/index.html`, so a reload on a deep link
+  does not 404.
+- `_headers` keeps `sw.js`, `index.html` and the manifest out of caches (a stale
+  service worker can hold a phone on an old build for days) and sets HSTS, CSP,
+  frame-ancestors and the camera permission. Supabase stays reachable through
+  `connect-src https://*.supabase.co`; do not narrow that to one project, because
+  shops can point sync at their own project.
+
+`netlify.toml` is kept while the old Netlify site is still live and can be
+deleted once the Cloudflare deployment has been in use for a while.
+
 ## Commercial licensing
 
 The app can be locked to a seller-issued subscription key. Each key has a device
@@ -104,7 +129,7 @@ works in airplane mode. Turn on airplane mode and confirm before you rely on it.
 |---|---|
 | Cloudflare quick tunnel | Free, no account, but needs internet to create the tunnel |
 | Tailscale | Real CA-signed cert, keeps working if the WAN drops |
-| Static host (Vercel / Netlify) | Easiest; only the first download needs internet |
+| Static host (Cloudflare Pages) | Easiest; only the first download needs internet |
 
 `certs/` is gitignored. The certificate is valid for one year; rerun
 `npm run cert` to renew.
