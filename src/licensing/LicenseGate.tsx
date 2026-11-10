@@ -36,7 +36,7 @@ function LicenseShell({
             T
           </div>
           <div>
-            <p className="text-sm font-semibold tracking-wide">Till POS</p>
+            <p className="text-sm font-semibold tracking-wide">Till</p>
             <p className="text-[11px] text-slate-500">Licensed point of sale</p>
           </div>
         </div>
@@ -115,7 +115,7 @@ function ActivationScreen() {
       try {
         await navigator.share({
           title: 'Till device code',
-          text: `Device code for Till POS activation: ${text}`,
+          text: `Device code for Till activation: ${text}`,
         })
         setShared(true)
         window.setTimeout(() => setShared(false), 1500)

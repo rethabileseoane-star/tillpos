@@ -82,7 +82,7 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api/],
       },
       manifest: {
-        name: 'Till POS',
+        name: 'Till',
         short_name: 'Till',
         description: 'Offline barcode point-of-sale and cash reconciliation',
         theme_color: '#0f172a',
@@ -93,9 +93,10 @@ export default defineConfig({
         scope: '/',
         categories: ['business', 'finance'],
         icons: [
-          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/icon-monochrome.png', sizes: '512x512', type: 'image/png', purpose: 'monochrome' },
         ],
       },
       devOptions: { enabled: false },

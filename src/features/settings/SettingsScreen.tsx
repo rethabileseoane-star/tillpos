@@ -209,7 +209,7 @@ export function SettingsScreen() {
         </p>
       )}
 
-      <p className="mt-6 text-center text-[11px] text-slate-600">Till POS · offline first</p>
+      <p className="mt-6 text-center text-[11px] text-slate-600">Till · offline first</p>
     </div>
   )
 }

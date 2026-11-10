@@ -19,7 +19,7 @@ import {
  * way in.
  */
 
-const RP_NAME = 'Till POS'
+const RP_NAME = 'Till'
 const TIMEOUT_MS = 60_000
 
 export type BiometricFailure = 'unsupported' | 'cancelled' | 'failed'
