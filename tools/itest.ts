@@ -1700,6 +1700,9 @@ async function main() {
     assert.equal(normalizeProjectUrl('demo.supabase.co/'), 'https://demo.supabase.co')
     assert.equal(normalizeProjectUrl('https://demo.supabase.co//'), 'https://demo.supabase.co')
     assert.equal(normalizeProjectUrl('  '), '')
+    // Credentials and sales must never be sent to a remote host in the clear.
+    assert.equal(normalizeProjectUrl('http://demo.supabase.co'), 'https://demo.supabase.co')
+    assert.equal(normalizeProjectUrl('http://127.0.0.1:54321'), 'http://127.0.0.1:54321')
 
     await saveSyncConfig({ url: 'demo.supabase.co/', anonKey: '  anon  ', email: ' shop@example.com ' })
     const cfg = await loadSyncConfig()

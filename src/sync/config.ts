@@ -21,11 +21,24 @@ const CONFIG_KEY = 'sync.config'
 const CURSOR_KEY = 'sync.cursor'
 const LAST_SYNC_KEY = 'sync.lastSync'
 
-/** Accepts "abc.supabase.co" as well as a full URL, and drops trailing slashes. */
+/**
+ * Accepts "abc.supabase.co" as well as a full URL, and drops trailing slashes.
+ *
+ * A remote project is forced to HTTPS: the anon key, the shop's session and
+ * every sale would otherwise travel in clear text if the owner typed `http://`.
+ * Loopback stays on HTTP so a local Supabase stack still works during
+ * development.
+ */
 export function normalizeProjectUrl(input: string): string {
   let url = input.trim()
   if (!url) return ''
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`
+  if (
+    /^http:\/\//i.test(url) &&
+    !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(url)
+  ) {
+    url = `https://${url.slice('http://'.length)}`
+  }
   return url.replace(/\/+$/, '')
 }
 
