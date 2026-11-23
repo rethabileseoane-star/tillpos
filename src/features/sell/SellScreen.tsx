@@ -62,12 +62,12 @@ export function SellScreen() {
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="absolute inset-0 bg-ice-100/60" />
+        <div className="absolute inset-0 bg-ice-100/25" />
       </div>
 
       <div className="relative z-10 flex h-full flex-col">
-        {/* Viewport: the live camera feed fills this box. */}
-        <div className="relative aspect-[4/3] w-full shrink-0 overflow-hidden bg-surface-200 sm:aspect-[16/9]">
+        {/* Viewport: the live camera feed fills this box. Background image shows through behind it. */}
+        <div className="relative aspect-[4/3] w-full shrink-0 overflow-hidden bg-transparent sm:aspect-[16/9]">
           <video
             ref={scanner.videoRef}
             playsInline
