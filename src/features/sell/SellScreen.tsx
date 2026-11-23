@@ -52,18 +52,16 @@ export function SellScreen() {
 
   return (
     <div className="flex h-full flex-col relative overflow-hidden">
-      {/* Background image — Ice Flow (reference image 1) */}
+      {/* Background image — Ice Flow (reference image 1), anchored to bottom half */}
       <div
-        className="absolute inset-0 z-0 bg-ice-100"
+        className="absolute inset-0 z-0"
         style={{
           backgroundImage: 'url("/backgrounds/ice-flow.jpg")',
           backgroundSize: 'cover',
           backgroundPosition: 'bottom center',
           backgroundRepeat: 'no-repeat',
         }}
-      >
-        <div className="absolute inset-0 bg-ice-100/25" />
-      </div>
+      />
 
       <div className="relative z-10 flex h-full flex-col">
         {/* Viewport: the live camera feed fills this box. Background image shows through behind it. */}
@@ -90,7 +88,7 @@ export function SellScreen() {
           )}
 
           {!scanning && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-surface-900/90 px-6 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-12 w-12 text-surface-500">
                 <path d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2M7 20H5a2 2 0 01-2-2v-2M3 12h18" />
               </svg>
