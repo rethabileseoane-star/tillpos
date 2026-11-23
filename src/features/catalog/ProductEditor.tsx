@@ -172,9 +172,10 @@ export function ProductEditor({ product, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
+        className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-2">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
         <h2 className="text-lg font-semibold text-surface-900">
           {product ? 'Edit item' : 'Add item'}
@@ -348,14 +349,25 @@ export function ProductEditor({ product, onClose }: Props) {
         {error && (
           <p className="mt-3 rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
         )}
+        </div>
 
-        <div className="mt-5 flex gap-2">
-          <button className="btn-ghost flex-1" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn-primary flex-1" onClick={() => void save()} disabled={!allValid || busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
+        <div
+          className="shrink-0 border-t border-white/60 bg-ice-200/95 px-4 pt-3 backdrop-blur"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          {!allValid && !error && (
+            <p className="mb-2 text-center text-[11px] text-surface-600">
+              Add a name, a price, and at least one barcode (4+ characters) to save.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button className="btn-ghost flex-1" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn-primary flex-1" onClick={() => void save()} disabled={!allValid || busy}>
+              {busy ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -340,14 +340,24 @@ function NewTabSheet({
         className="field mt-1"
       />
       {error && <p className="mt-3 text-sm text-surface-700">{error}</p>}
-      <button
-        type="button"
-        disabled={busy || !name.trim()}
-        onClick={() => void save()}
-        className="btn-primary mt-4 w-full"
+      <div
+        className="sticky bottom-0 z-10 -mx-4 -mb-6 mt-4 border-t border-white/60 bg-ice-200/95 px-4 pt-3 backdrop-blur"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
       >
-        {busy ? 'Creating…' : 'Create tab'}
-      </button>
+        {!name.trim() && !busy && (
+          <p className="mb-2 text-center text-[11px] text-surface-600">
+            Enter a customer name to create the tab.
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={busy || !name.trim()}
+          onClick={() => void save()}
+          className="btn-primary w-full"
+        >
+          {busy ? 'Creating…' : 'Create tab'}
+        </button>
+      </div>
     </SheetShell>
   )
 }
@@ -445,14 +455,29 @@ function TabCashSheet({
         className="field mt-1"
       />
       {error && <p className="mt-3 text-sm text-surface-700">{error}</p>}
-      <button
-        type="button"
-        disabled={busy || cents === null || cents <= 0 || tooMuch}
-        onClick={() => void save()}
-        className="btn-primary mt-4 w-full"
+      <div
+        className="sticky bottom-0 z-10 -mx-4 -mb-6 mt-4 border-t border-white/60 bg-ice-200/95 px-4 pt-3 backdrop-blur"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
       >
-        {busy ? 'Saving…' : isPayout ? 'Pay out' : 'Add money'}
-      </button>
+        {(cents === null || cents <= 0) && !busy && (
+          <p className="mb-2 text-center text-[11px] text-surface-600">
+            Enter an amount greater than zero.
+          </p>
+        )}
+        {tooMuch && (
+          <p className="mb-2 text-center text-[11px] text-surface-600">
+            Only {formatMaluti(balance)} is on this tab.
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={busy || cents === null || cents <= 0 || tooMuch}
+          onClick={() => void save()}
+          className="btn-primary w-full"
+        >
+          {busy ? 'Saving…' : isPayout ? 'Pay out' : 'Add money'}
+        </button>
+      </div>
     </SheetShell>
   )
 }

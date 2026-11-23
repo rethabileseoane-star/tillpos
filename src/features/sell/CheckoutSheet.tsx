@@ -158,9 +158,10 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
       onClick={stage === 'done' ? onComplete : onClose}
     >
       <div
-        className="max-h-[94dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
+        className="flex max-h-[94dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-2">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
 
         {stage === 'pay' && (
@@ -374,7 +375,24 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
               <p className="mt-3 rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
             )}
 
-            <div className="mt-5 flex gap-2">
+            <p className="mt-3 text-center text-[11px] text-surface-500">
+              {method === 'cash'
+                ? tabApplied > 0
+                  ? 'The tab pays the rest. Cash received can still be more, and the change can go back on the tab.'
+                  : 'Tendering more than the total is fine. You can keep the change on a customer tab.'
+                : 'The unpaid balance goes into the credit book. No cash is counted until it is paid.'}
+            </p>
+            {!canComplete && (
+              <p className="mt-2 text-center text-[11px] text-surface-600">
+                {method === 'cash'
+                  ? 'Enter enough cash to cover the total to complete the sale.'
+                  : 'Enter a customer name to complete the sale.'}
+              </p>
+            )}
+            <div
+              className="sticky bottom-0 z-10 -mx-4 mt-3 flex gap-2 border-t border-white/60 bg-ice-200/95 px-4 pt-3 backdrop-blur"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
               <button className="btn-ghost flex-1" onClick={onClose}>
                 Cancel
               </button>
@@ -386,13 +404,6 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                 {busy ? 'Saving…' : 'Complete sale'}
               </button>
             </div>
-            <p className="mt-3 text-center text-[11px] text-surface-500">
-              {method === 'cash'
-                ? tabApplied > 0
-                  ? 'The tab pays the rest. Cash received can still be more, and the change can go back on the tab.'
-                  : 'Tendering more than the total is fine. You can keep the change on a customer tab.'
-                : 'The unpaid balance goes into the credit book. No cash is counted until it is paid.'}
-            </p>
           </>
         )}
 
@@ -470,6 +481,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {tabPickerOpen && (

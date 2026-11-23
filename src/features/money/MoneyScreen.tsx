@@ -50,8 +50,6 @@ type SheetKind = 'buy' | 'float' | 'cash_in' | 'drawing' | 'expense' | 'loan_rep
 export function MoneyScreen() {
   const [sheet, setSheet] = useState<SheetKind | null>(null)
   const today = businessDate()
-  // Toast state for save feedback
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const cash = useLiveQuery(
     () => db.cashMovements.orderBy('createdAt').reverse().toArray(),
     [],
@@ -308,6 +306,7 @@ function QuickAmountSheet({
   const [kind2, setKind2] = useState<CashInKind>('capital')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const cents = parseAmount(amount)
   // Enable save when a valid positive amount is entered.
@@ -344,9 +343,10 @@ function QuickAmountSheet({
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
+        className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-2">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
         <h2 className="text-lg font-semibold text-surface-900">{config.title}</h2>
         <p className="mt-0.5 text-xs text-surface-600">{config.label}</p>
@@ -406,22 +406,31 @@ function QuickAmountSheet({
         )}
         {error && <p className="mt-2 text-xs text-surface-700">{error}</p>}
         {toast && (
-          <p className="mt-2 text-center text-[11px] font-medium {
-            toast.type === 'success'
-              ? 'text-green-600'
-              : toast.type === 'error'
-                ? 'text-surface-700'
-                : 'text-cyan-600'
-          }">
+          <p
+            className={`mt-2 text-center text-[11px] font-medium ${
+              toast.type === 'success' ? 'text-cyan-600' : 'text-surface-700'
+            }`}
+          >
             {toast.message}
           </p>
         )}
+        </div>
 
-        <div className="mt-5 flex gap-2">
-          <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
-          <button className="btn-primary flex-1" disabled={!canSave} onClick={() => void save()}>
-            {busy ? 'Saving…' : config.saveLabel}
-          </button>
+        <div
+          className="shrink-0 border-t border-white/60 bg-ice-200/95 px-4 pt-3 backdrop-blur"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          {!canSave && !busy && (
+            <p className="mb-2 text-center text-[11px] text-surface-600">
+              Enter an amount greater than zero to save.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
+            <button className="btn-primary flex-1" disabled={!canSave} onClick={() => void save()}>
+              {busy ? 'Saving…' : config.saveLabel}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -532,9 +541,10 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
+        className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-2">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
         <h2 className="text-lg font-semibold text-surface-900">Bought stock</h2>
         <p className="mt-0.5 text-xs text-surface-600">
@@ -642,12 +652,25 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
         </div>
 
         {error && <p className="mt-2 text-xs text-surface-700">{error}</p>}
+        </div>
 
-        <div className="mt-5 flex gap-2">
-          <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
-          <button className="btn-primary flex-1" disabled={!canSave} onClick={() => void save()}>
-            {busy ? 'Saving…' : selected.length > 0 ? `Save ${formatMaluti(paid ?? 0)}` : 'Save'}
-          </button>
+        <div
+          className="shrink-0 border-t border-white/60 bg-ice-200/95 px-4 pt-3 backdrop-blur"
+          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+        >
+          {!canSave && !busy && (
+            <p className="mb-2 text-center text-[11px] text-surface-600">
+              {Object.keys(sel).length === 0
+                ? 'Add at least one item to record a stock purchase.'
+                : 'Enter the amount you paid to save.'}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
+            <button className="btn-primary flex-1" disabled={!canSave} onClick={() => void save()}>
+              {busy ? 'Saving…' : selected.length > 0 ? `Save ${formatMaluti(paid ?? 0)}` : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
 

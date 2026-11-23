@@ -181,6 +181,12 @@ export function CatalogScreen() {
           placeholder="Search name, barcode, or details"
         />
 
+        {readOnly && (
+          <p className="mt-3 rounded-xl border border-surface-300 bg-ice-200/70 px-3 py-2 text-xs text-surface-600">
+            Read-only view. Sign in as the owner to add or edit items.
+          </p>
+        )}
+
         {!readOnly && showDeleted && (
           <button
             className="mt-3 text-xs text-cyan-600 underline hover:text-cyan-500"
