@@ -51,7 +51,7 @@ export function SellScreen() {
   }, [])
 
   return (
-    <div className="flex h-full flex-col relative overflow-hidden">
+    <div className="relative min-h-[100dvh] flex flex-col overflow-hidden">
       {/* Background image — Ice Flow (reference image 1), anchored to bottom half */}
       <div
         className="absolute inset-0 z-0"
