@@ -58,7 +58,7 @@ export function SellScreen() {
         style={{
           backgroundImage: 'url("/backgrounds/ice-flow.jpg")',
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          backgroundPosition: 'bottom center',
           backgroundRepeat: 'no-repeat',
         }}
       >
