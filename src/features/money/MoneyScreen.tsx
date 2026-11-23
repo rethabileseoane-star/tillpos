@@ -50,7 +50,8 @@ type SheetKind = 'buy' | 'float' | 'cash_in' | 'drawing' | 'expense' | 'loan_rep
 export function MoneyScreen() {
   const [sheet, setSheet] = useState<SheetKind | null>(null)
   const today = businessDate()
-
+  // Toast state for save feedback
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const cash = useLiveQuery(
     () => db.cashMovements.orderBy('createdAt').reverse().toArray(),
     [],
@@ -202,7 +203,8 @@ function ActionButton({ label, sub, onTap }: { label: string; sub: string; onTap
   return (
     <button
       onClick={onTap}
-      className="card flex flex-col items-center gap-0.5 !border-surface-300 !py-4 transition active:scale-[0.98] hover:border-cyan-400/30"
+      className="card flex flex-col items-center gap-0.5 !border-surface-300 !py-4 transition duration-150 ease-in-out hover:border-cyan-400/30 active:scale-[0.98] focus:outline-none focus:scale-[0.98]"
+      aria-label={label}
     >
       <span className="text-sm font-semibold text-surface-900">{label}</span>
       <span className="text-[11px] text-surface-600">{sub}</span>
@@ -308,11 +310,14 @@ function QuickAmountSheet({
   const [busy, setBusy] = useState(false)
 
   const cents = parseAmount(amount)
+  // Enable save when a valid positive amount is entered.
+  // Allow 0.01M (1 tambala) and up; empty/invalid keeps button disabled.
   const canSave = cents !== null && cents > 0 && !busy
 
   const save = async () => {
     if (cents === null || cents <= 0) {
       setError('Enter an amount greater than zero')
+      setToast({ type: 'error', message: 'Enter an amount greater than zero' })
       return
     }
     setBusy(true)
@@ -325,9 +330,12 @@ function QuickAmountSheet({
       else if (kind === 'loan_repay') await recordLoanRepay(cents, note || 'Loan repaid')
       else await recordExpense(cents, note || 'Paid out')
       feedbackSuccess()
+      setToast({ type: 'success', message: 'Recorded successfully' })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not record it')
+      const msg = err instanceof Error ? err.message : 'Could not record it'
+      setError(msg)
+      setToast({ type: 'error', message: msg })
     } finally {
       setBusy(false)
     }
@@ -397,6 +405,17 @@ function QuickAmountSheet({
           <p className="mt-3 text-[11px] leading-relaxed text-surface-600">{config.hint}</p>
         )}
         {error && <p className="mt-2 text-xs text-surface-700">{error}</p>}
+        {toast && (
+          <p className="mt-2 text-center text-[11px] font-medium {
+            toast.type === 'success'
+              ? 'text-green-600'
+              : toast.type === 'error'
+                ? 'text-surface-700'
+                : 'text-cyan-600'
+          }">
+            {toast.message}
+          </p>
+        )}
 
         <div className="mt-5 flex gap-2">
           <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
