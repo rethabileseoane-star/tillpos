@@ -49,7 +49,7 @@ export function TabsScreen() {
         className="absolute inset-0 z-0 bg-ice-100"
         style={{
           backgroundImage: 'url("/backgrounds/ref-4.jpg")',
-          backgroundSize: 'contain',
+          backgroundSize: 'cover',
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
         }}
