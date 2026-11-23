@@ -120,7 +120,9 @@ export async function lookupProduct(rawCode: string): Promise<Product | undefine
     const hit =
       (await db.products.where('barcode').equals(code).first()) ??
       (await db.products.where('barcodes').equals(code).first())
-    if (hit) return hit
+    // A soft-deleted product keeps its row so old sales still make sense, but
+    // it must not be sellable: scanning it should fall through as unknown.
+    if (hit && hit.deletedAt == null) return hit
   }
 
   // Fall back to a prefix scan so a truncated read can still resolve — but only
@@ -129,7 +131,7 @@ export async function lookupProduct(rawCode: string): Promise<Product | undefine
   const prefix = variants[0]!
   if (prefix.length < 8) return undefined
   const near = await db.products.where('barcode').startsWith(prefix).limit(2).toArray()
-  return near.length === 1 ? near[0] : undefined
+  return near.length === 1 && near[0]!.deletedAt == null ? near[0] : undefined
 }
 
 export type { CartLine }

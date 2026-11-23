@@ -19,15 +19,6 @@ interface Props {
 
 type Stage = 'pay' | 'done'
 
-/**
- * Checkout for cash, customer credit and customer tabs.
- *
- * Cash works as before: type the tender and the change updates. A customer tab
- * can pay part of a cash sale, and the change can be left on a tab instead of
- * handed back when the drawer cannot break it. Credit records the customer,
- * takes an optional deposit into the drawer, and leaves the rest as a
- * receivable. The accounting for all three lives in `commitSale`, not here.
- */
 export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
   const { lines } = useCart()
   const { session } = useAppLock()
@@ -37,7 +28,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
   const [customerName, setCustomerName] = useState('')
   const [paidNow, setPaidNow] = useState('')
   const [tabId, setTabId] = useState<string | null>(null)
-  const [tabUse, setTabUse] = useState('')
+  const [tabUse, setTabUse] = useState<string>('')
   const [keepChange, setKeepChange] = useState(false)
   const [newTabName, setNewTabName] = useState('')
   const [tabPickerOpen, setTabPickerOpen] = useState(false)
@@ -63,8 +54,6 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
     }
   }, [open])
 
-  // Load only while the sheet is open. The Sell screen keeps this component
-  // mounted, so an unconditional query would load every tab on every visit.
   const tabs =
     useLiveQuery(
       () =>
@@ -87,8 +76,6 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
 
   if (!open) return null
 
-  // Parse once. `Number(tendered.replace(...))` turned any non-numeric input
-  // into 0, so "abc" completed a sale as if the customer had tendered nothing.
   const tenderedCents = parseAmount(tendered)
   const tabUseCents = tabUse.trim() === '' ? 0 : parseAmount(tabUse)
   const tabApplied = method === 'cash' && tabUseCents !== null ? tabUseCents : 0
@@ -131,7 +118,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
           ? await commitSale({
               lines,
               paymentMethod: 'cash',
-              amountTendered: cashDue === 0 ? 0 : (tenderedCents as Cents),
+              amountTendered: (tenderedCents ?? 0) as Cents,
               tabId:
                 selectedTab && (tabApplied > 0 || changeKept > 0)
                   ? selectedTab.id
@@ -167,26 +154,26 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end bg-black/75"
+      className="fixed inset-0 z-50 flex items-end bg-surface-900/40"
       onClick={stage === 'done' ? onComplete : onClose}
     >
       <div
-        className="max-h-[94dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="max-h-[94dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
 
         {stage === 'pay' && (
           <>
             <div className="text-center">
-              <p className="text-xs uppercase tracking-wider text-slate-400">
+              <p className="text-xs uppercase tracking-wider text-surface-600">
                 {tabApplied > 0 ? 'Amount due after tab' : 'Amount due'}
               </p>
-              <p className="font-mono text-price font-bold text-cash-400">
+              <p className="font-mono text-price font-bold text-cyan-600">
                 {formatMaluti(cashDue)}
               </p>
               {tabApplied > 0 && (
-                <p className="mt-0.5 text-[11px] text-slate-400">
+                <p className="mt-0.5 text-[11px] text-surface-600">
                   Sale {formatMaluti(total)} · from tab {formatMaluti(tabApplied)}
                 </p>
               )}
@@ -195,7 +182,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button
                 className={`btn !py-2.5 text-sm ${
-                  method === 'cash' ? 'bg-cash-500 text-on-accent' : 'bg-ink-700'
+                  method === 'cash' ? 'bg-cyan-400 text-white' : 'bg-surface-200'
                 }`}
                 onClick={() => setMethod('cash')}
               >
@@ -203,7 +190,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
               </button>
               <button
                 className={`btn !py-2.5 text-sm ${
-                  method === 'credit' ? 'bg-cash-500 text-on-accent' : 'bg-ink-700'
+                  method === 'credit' ? 'bg-cyan-400 text-white' : 'bg-surface-200'
                 }`}
                 onClick={() => setMethod('credit')}
               >
@@ -213,13 +200,13 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
 
             {method === 'cash' ? (
               <>
-                <div className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/10 p-3">
+                <div className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-400">
+                      <p className="text-[10px] uppercase tracking-wider text-surface-600">
                         Customer tab
                       </p>
-                      <p className="truncate text-sm font-medium">
+                      <p className="truncate text-sm font-medium text-surface-900">
                         {selectedTab
                           ? `${selectedTab.name} · ${formatMaluti(selectedBalance)} available`
                           : 'Use money the shop owes a customer'}
@@ -228,7 +215,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                     <button
                       type="button"
                       onClick={() => setTabPickerOpen(true)}
-                      className="shrink-0 rounded-lg bg-ink-700 px-2.5 py-1.5 text-xs font-medium active:bg-ink-600"
+                      className="shrink-0 rounded-lg bg-surface-300 px-2.5 py-1.5 text-xs font-medium active:bg-surface-400"
                     >
                       {selectedTab ? 'Change' : 'Use tab'}
                     </button>
@@ -252,24 +239,24 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                               (Math.min(selectedBalance, total) / 100).toFixed(2),
                             )
                           }
-                          className="shrink-0 rounded-lg bg-ink-700 px-3 text-xs font-medium active:bg-ink-600"
+                          className="shrink-0 rounded-lg bg-surface-300 px-3 text-xs font-medium active:bg-surface-400"
                         >
                           Use max
                         </button>
                       </div>
-                      <p className="mt-1 text-[10px] text-slate-500">
+                      <p className="mt-1 text-[10px] text-surface-500">
                         Up to {formatMaluti(Math.min(selectedBalance, total))} of this sale.
                       </p>
                       {tabUse.trim() !== '' && tabUseCents === null && (
-                        <p className="mt-1 text-xs text-red-300">Enter a valid amount.</p>
+                        <p className="mt-1 text-xs text-surface-700">Enter a valid amount.</p>
                       )}
                       {tabUseCents !== null && tabApplied > selectedBalance && (
-                        <p className="mt-1 text-xs text-red-300">
+                        <p className="mt-1 text-xs text-surface-700">
                           Only {formatMaluti(selectedBalance)} is on that tab.
                         </p>
                       )}
                       {tabUseCents !== null && tabApplied > total && (
-                        <p className="mt-1 text-xs text-red-300">
+                        <p className="mt-1 text-xs text-surface-700">
                           The tab cannot pay more than the sale.
                         </p>
                       )}
@@ -277,12 +264,12 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                   )}
 
                   {change !== null && change > 0 && (
-                    <label className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-slate-300">
+                    <label className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-surface-600">
                       <input
                         type="checkbox"
                         checked={keepChange}
                         onChange={(e) => setKeepChange(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 accent-sky-400"
+                        className="mt-0.5 h-4 w-4 accent-cyan-400"
                       />
                       <span>
                         Keep the {formatMaluti(change)} change on a tab instead of
@@ -312,25 +299,25 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                 />
 
                 {change !== null && tendered !== '' && shortBy === 0 && change > 0 && (
-                  <p className="mt-2 text-center text-sm text-slate-300">
+                  <p className="mt-2 text-center text-sm text-surface-600">
                     Change:{' '}
-                    <span className="font-mono font-semibold text-cash-400">
+                    <span className="font-mono font-semibold text-cyan-600">
                       {formatMaluti(change)}
                     </span>
                     {changeKept > 0 && (
-                      <span className="text-sky-300"> · kept on tab</span>
+                      <span className="text-cyan-600"> · kept on tab</span>
                     )}
                   </p>
                 )}
 
                 {shortBy > 0 && (
-                  <p className="mt-2 text-center text-sm font-medium text-red-300">
+                  <p className="mt-2 text-center text-sm font-medium text-surface-700">
                     Short by {formatMaluti(shortBy)}
                   </p>
                 )}
 
                 {tendered !== '' && tenderedCents === null && (
-                  <p className="mt-2 text-center text-sm text-red-300">Enter a valid amount</p>
+                  <p className="mt-2 text-center text-sm text-surface-700">Enter a valid amount</p>
                 )}
 
                 {cashDue > 0 && (
@@ -339,7 +326,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                       <button
                         key={amt}
                         onClick={() => setTendered(String(amt / 100))}
-                        className="rounded-lg bg-ink-700 px-3 py-2 font-mono text-sm active:bg-ink-600"
+                        className="rounded-lg bg-surface-300 px-3 py-2 font-mono text-sm active:bg-surface-400"
                       >
                         {formatMaluti(amt)}
                       </button>
@@ -358,7 +345,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                   autoFocus
                 />
 
-                <label className="mt-3 block text-[11px] uppercase tracking-wider text-slate-400">
+                <label className="mt-3 block text-[11px] uppercase tracking-wider text-surface-600">
                   Paid now (optional)
                 </label>
                 <input
@@ -369,14 +356,14 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                   placeholder="0"
                 />
 
-                <p className="mt-2 text-center text-sm text-slate-300">
+                <p className="mt-2 text-center text-sm text-surface-600">
                   Balance to pay later:{' '}
-                  <span className="font-mono font-semibold text-amber-300">
+                  <span className="font-mono font-semibold text-surface-700">
                     {formatMaluti(Math.max(0, creditBalance))}
                   </span>
                 </p>
                 {!depositValid && (
-                  <p className="mt-1 text-center text-sm text-red-300">
+                  <p className="mt-1 text-center text-sm text-surface-700">
                     Enter an amount between 0 and {formatMaluti(total)}
                   </p>
                 )}
@@ -384,7 +371,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
             )}
 
             {error && (
-              <p className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300">{error}</p>
+              <p className="mt-3 rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
             )}
 
             <div className="mt-5 flex gap-2">
@@ -399,7 +386,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                 {busy ? 'Saving…' : 'Complete sale'}
               </button>
             </div>
-            <p className="mt-3 text-center text-[11px] text-slate-500">
+            <p className="mt-3 text-center text-[11px] text-surface-500">
               {method === 'cash'
                 ? tabApplied > 0
                   ? 'The tab pays the rest. Cash received can still be more, and the change can go back on the tab.'
@@ -411,49 +398,49 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
 
         {stage === 'done' && sale && (
           <div className="text-center">
-            <div className="mx-auto flex h-14 w-14 animate-pop items-center justify-center rounded-full bg-cash-500 text-on-accent shadow-lift">
+            <div className="mx-auto flex h-14 w-14 animate-pop items-center justify-center rounded-full bg-cyan-400 text-white shadow-lift">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="h-7 w-7">
                 <path d="M20 6L9 17l-5-5" />
               </svg>
             </div>
-            <p className="mt-3 text-lg font-semibold">Sale recorded</p>
-            <p className="chip mx-auto mt-1.5 bg-ink-700 font-mono text-sm text-slate-300">
+            <p className="mt-3 text-lg font-semibold text-surface-900">Sale recorded</p>
+            <p className="chip mx-auto mt-1.5 bg-surface-300 font-mono text-sm text-surface-900">
               Receipt #{sale.receiptNo}
             </p>
-            <p className="mt-2 font-mono text-price font-bold text-cash-400">
+            <p className="mt-2 font-mono text-price font-bold text-cyan-600">
               {formatMaluti(sale.total)}
             </p>
 
             {sale.paymentMethod === 'cash' && (sale.tabApplied ?? 0) > 0 && (
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-surface-600">
                 From {saleTabName}:{' '}
-                <span className="font-mono font-semibold text-sky-300">
+                <span className="font-mono font-semibold text-cyan-600">
                   {formatMaluti(sale.tabApplied ?? 0)}
                 </span>
               </p>
             )}
 
             {sale.paymentMethod === 'cash' && changeGiven > 0 && (
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-surface-600">
                 Change{' '}
-                <span className="font-mono font-semibold text-cash-400">
+                <span className="font-mono font-semibold text-cyan-600">
                   {formatMaluti(changeGiven)}
                 </span>
               </p>
             )}
 
             {sale.paymentMethod === 'cash' && (sale.tabChangeKept ?? 0) > 0 && (
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-surface-600">
                 Change kept on {saleTabName}:{' '}
-                <span className="font-mono font-semibold text-sky-300">
+                <span className="font-mono font-semibold text-cyan-600">
                   {formatMaluti(sale.tabChangeKept ?? 0)}
                 </span>
               </p>
             )}
 
             {sale.paymentMethod === 'credit' && (
-              <div className="mt-1 text-sm text-slate-300">
-                <p className="font-semibold">{sale.customerName}</p>
+              <div className="mt-1 text-sm text-surface-600">
+                <p className="font-semibold text-surface-900">{sale.customerName}</p>
                 {(depositCents ?? 0) > 0 && (
                   <p>
                     Paid now{' '}
@@ -464,16 +451,16 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
                   <>
                     <p>
                       Balance{' '}
-                      <span className="font-mono font-semibold text-amber-300">
+                      <span className="font-mono font-semibold text-surface-700">
                         {formatMaluti(sale.total - (depositCents ?? 0))}
                       </span>
                     </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-surface-500">
                       Collect it later from the credit book in History.
                     </p>
                   </>
                 ) : (
-                  <p className="font-semibold text-cash-400">Paid in full</p>
+                  <p className="font-semibold text-cyan-600">Paid in full</p>
                 )}
               </div>
             )}
@@ -538,25 +525,25 @@ function TabPickerSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end bg-black/80 sm:items-center sm:justify-center sm:p-4"
+      className="fixed inset-0 z-[60] flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[85dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6 sm:max-w-md sm:rounded-2xl"
+        className="max-h-[85dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600 sm:hidden" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Use a customer tab</h2>
-            <p className="text-xs text-slate-400">
+            <h2 className="text-lg font-semibold text-surface-900">Use a customer tab</h2>
+            <p className="text-xs text-surface-600">
               Choose a customer whose tab should pay part of this sale.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-ink-700"
+            className="rounded-lg px-2 py-1 text-sm text-surface-600 hover:bg-surface-200"
             aria-label="Close"
           >
             ✕
@@ -573,7 +560,7 @@ function TabPickerSheet({
         />
 
         {rows.length === 0 ? (
-          <p className="mt-3 rounded-xl border border-ink-700 px-4 py-6 text-center text-sm text-slate-500">
+          <p className="mt-3 rounded-xl border border-surface-300 px-4 py-6 text-center text-sm text-surface-500">
             No tabs match. Keep change on a tab at checkout to create one.
           </p>
         ) : (
@@ -587,17 +574,17 @@ function TabPickerSheet({
                     type="button"
                     disabled={balance <= 0}
                     onClick={() => onSelect(tab)}
-                    className={`card flex w-full items-center gap-3 !py-3 text-left active:bg-ink-700 disabled:opacity-40 ${
-                      selected ? 'border-sky-500/50' : ''
+                    className={`card flex w-full items-center gap-3 !py-3 text-left active:bg-surface-200 disabled:opacity-40 ${
+                      selected ? 'border-cyan-400/50' : ''
                     }`}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{tab.name}</span>
-                      <span className="block truncate text-[11px] text-slate-500">
+                      <span className="block truncate font-medium text-surface-900">{tab.name}</span>
+                      <span className="block truncate text-[11px] text-surface-500">
                         {tab.phone || 'Customer tab'}
                       </span>
                     </span>
-                    <span className="font-mono text-sm font-semibold text-sky-300">
+                    <span className="font-mono text-sm font-semibold text-cyan-600">
                       {formatMaluti(balance)}
                     </span>
                   </button>

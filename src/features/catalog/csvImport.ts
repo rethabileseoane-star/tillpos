@@ -94,10 +94,22 @@ function rowsToDrafts(rows: Record<string, unknown>[]): {
       return
     }
 
+    // `null` records that the file says nothing about stock. A missing column
+    // must not be read as "set the stock to zero": re-importing a price list
+    // would otherwise wipe every product's stock. A malformed figure is skipped
+    // for the same reason — a typo must not silently zero the shelf either.
     const stockRaw = get('stockQty')
-    const stockQty = stockRaw === undefined || stockRaw === null || stockRaw === ''
-      ? 0
-      : Number(stockRaw)
+    const stockText =
+      stockRaw === undefined || stockRaw === null ? '' : String(stockRaw).trim()
+    let stockQty: number | null = null
+    if (stockText !== '') {
+      const parsed = Number(stockText.replace(/,/g, ''))
+      if (!Number.isFinite(parsed)) {
+        errors.push({ row: rowNo, barcode, reason: `bad stock "${stockText}"` })
+        return
+      }
+      stockQty = Math.round(parsed)
+    }
     const thresholdRaw = get('lowStockThreshold')
 
     let cost: Cents | null = null
@@ -130,7 +142,7 @@ function rowsToDrafts(rows: Record<string, unknown>[]): {
       details: headerMap['details'] ? String(get('details') ?? '').trim() || undefined : undefined,
       price,
       cost,
-      stockQty: Number.isFinite(stockQty) ? Math.round(stockQty) : 0,
+      stockQty,
       lowStockThreshold:
         thresholdRaw === undefined || thresholdRaw === null || thresholdRaw === ''
           ? null
@@ -190,8 +202,10 @@ export async function importProducts(file: File): Promise<ImportResult> {
       const existing = await db.products.where('barcode').equals(draft.barcode).first()
 
       if (!existing) {
+        const openingStock = draft.stockQty ?? 0
         const product = withSyncMeta(undefined, {
           ...draft,
+          stockQty: openingStock,
           cost: draft.cost ?? draft.price,
           lowStockThreshold: draft.lowStockThreshold ?? 0,
           active: true,
@@ -199,10 +213,10 @@ export async function importProducts(file: File): Promise<ImportResult> {
         await db.products.put(product)
         await queueEntity('products', product.id, 'upsert', product)
 
-        if (draft.stockQty !== 0) {
+        if (openingStock !== 0) {
           const movement = withSyncMeta(undefined, {
             productId: product.id,
-            delta: draft.stockQty,
+            delta: openingStock,
             reason: 'import' as const,
             refId: null,
             note: `Opening stock from ${file.name}`,
@@ -215,7 +229,9 @@ export async function importProducts(file: File): Promise<ImportResult> {
       }
 
       // Update price and name. Stock moves only when the file states a figure.
-      const stockChanged = draft.stockQty !== existing.stockQty
+      const stockChanged =
+        draft.stockQty !== null && draft.stockQty !== existing.stockQty
+      const newStock = draft.stockQty ?? existing.stockQty
       const updated = withSyncMeta(existing, {
         ...existing,
         barcodes: draft.barcodes ?? [draft.barcode],
@@ -225,7 +241,7 @@ export async function importProducts(file: File): Promise<ImportResult> {
         cost: draft.cost ?? existing.cost ?? draft.price,
         category: draft.category || existing.category,
         lowStockThreshold: draft.lowStockThreshold ?? existing.lowStockThreshold,
-        stockQty: draft.stockQty,
+        stockQty: newStock,
         active: true,
       }) as Product
       await db.products.put(updated)
@@ -234,7 +250,7 @@ export async function importProducts(file: File): Promise<ImportResult> {
       if (stockChanged) {
         const movement = withSyncMeta(undefined, {
           productId: existing.id,
-          delta: draft.stockQty - existing.stockQty,
+          delta: newStock - existing.stockQty,
           reason: 'import' as const,
           refId: null,
           note: `Reconciled from ${file.name}`,

@@ -20,18 +20,6 @@ import {
   type AttemptState,
 } from './secret'
 
-/**
- * Full-screen gate. Nothing from the till is mounted while this is visible.
- *
- * The phone may hold several staff accounts, so the owner and every cashier
- * share the same screen but not the same secret. A wrong secret is refused
- * without saying whether the length or kind was close, and five failures in a
- * row earn a cooldown persisted across reloads. Attempt streaks are per
- * account: a cashier cannot lock the owner out by guessing on their own name.
- *
- * Biometrics are offered for the owner only. A cashier who forgets their PIN
- * is told to ask the owner, who can reset it from Settings → Staff.
- */
 export function LockScreen({
   accounts,
   biometric,
@@ -50,7 +38,6 @@ export function LockScreen({
   const [shopSheetOpen, setShopSheetOpen] = useState(false)
 
   useEffect(() => {
-    // Cosmetic only: a missing shop name must not disturb the lock screen.
     void loadShopName()
       .then(setShop)
       .catch(() => undefined)
@@ -93,23 +80,23 @@ export function LockScreen({
 
   return (
     <>
-      <div className="flex min-h-dvh flex-col bg-ink-900 px-5 py-8">
+      <div className="flex min-h-dvh flex-col bg-ice-100 px-5 py-8">
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
           <header className="flex flex-col items-center text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cash-500/15 text-cash-400">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-600">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-7 w-7">
                 <rect x="5" y="11" width="14" height="9" rx="2" />
                 <path d="M8 11V8a4 4 0 118 0v3" />
               </svg>
             </div>
-            <p className="mt-4 text-[10px] uppercase tracking-[0.25em] text-slate-500">
+            <p className="mt-4 text-[10px] uppercase tracking-[0.25em] text-surface-600">
               {shop || activeShop.name}
             </p>
-            <h1 className="mt-2 text-xl font-bold">{selected.name}</h1>
-            <p className="mt-1 text-xs uppercase tracking-wider text-slate-500">
+            <h1 className="mt-2 text-xl font-bold text-surface-900">{selected.name}</h1>
+            <p className="mt-1 text-xs uppercase tracking-wider text-surface-600">
               {selected.role === 'owner' ? 'Owner' : 'Cashier'}
             </p>
-            <p className="mt-2 text-sm text-slate-400">
+            <p className="mt-2 text-sm text-surface-500">
               Enter your {isPin ? 'PIN' : 'password'} to open the till.
             </p>
           </header>
@@ -158,10 +145,10 @@ function AccountPicker({
   footer?: ReactNode
 }) {
   return (
-    <div className="flex min-h-dvh flex-col bg-ink-900 px-5 py-8">
+    <div className="flex min-h-dvh flex-col bg-ice-100 px-5 py-8">
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
         <header className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cash-500/15 text-cash-400">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-600">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-7 w-7">
               <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2" />
               <circle cx="9" cy="7" r="4" />
@@ -169,10 +156,10 @@ function AccountPicker({
             </svg>
           </div>
           {shop && (
-            <p className="mt-4 text-[10px] uppercase tracking-[0.25em] text-slate-500">{shop}</p>
+            <p className="mt-4 text-[10px] uppercase tracking-[0.25em] text-surface-600">{shop}</p>
           )}
-          <h1 className="mt-2 text-xl font-bold">Who is on the till?</h1>
-          <p className="mt-1 text-sm text-slate-400">Choose your account to open the till.</p>
+          <h1 className="mt-2 text-xl font-bold text-surface-900">Who is on the till?</h1>
+          <p className="mt-1 text-sm text-surface-500">Choose your account to open the till.</p>
         </header>
 
         <div className="mt-6 space-y-2">
@@ -181,14 +168,14 @@ function AccountPicker({
               key={account.id}
               type="button"
               onClick={() => onPick(account)}
-              className="card flex w-full items-center gap-3 !py-3 text-left active:bg-ink-700"
+              className="card flex w-full items-center gap-3 !py-3 text-left active:bg-surface-200"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ink-700 font-semibold text-cash-400">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/15 font-semibold text-cyan-600">
                 {initials(account.name)}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{account.name}</span>
-                <span className="block text-xs text-slate-400">
+                <span className="block truncate font-medium text-surface-900">{account.name}</span>
+                <span className="block text-xs text-surface-600">
                   {account.role === 'owner' ? 'Owner' : 'Cashier'} ·{' '}
                   {account.credential.kind === 'pin'
                     ? `PIN, ${account.credential.length} digits`
@@ -200,7 +187,7 @@ function AccountPicker({
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
-                className="h-5 w-5 shrink-0 text-slate-500"
+                className="h-5 w-5 shrink-0 text-surface-600"
               >
                 <path d="M9 18l6-6-6-6" />
               </svg>
@@ -247,14 +234,12 @@ function LockEntry({
   const cooling = remaining > 0
   const locked = busy || cooling
 
-  // Tick only while a cooldown is running.
   useEffect(() => {
     if (!cooling) return
     const id = setInterval(() => setClock(Date.now()), 500)
     return () => clearInterval(id)
   }, [cooling, attempts])
 
-  // Clear the failure message once the wait is over.
   useEffect(() => {
     if (!cooling) return
     return () => setError(null)
@@ -284,8 +269,6 @@ function LockEntry({
     setError('Incorrect. Try again.')
   }
 
-  // PIN entry submits itself at the stored length. `pin` is the only trigger
-  // needed: `submit` reads the current render's state.
   useEffect(() => {
     if (!isPin || pin.length !== pinLength) return
     if (locked) return
@@ -335,8 +318,8 @@ function LockEntry({
                   key={i}
                   className={`h-3.5 w-3.5 rounded-full border transition ${
                     i < pin.length
-                      ? 'border-cash-500 bg-cash-500'
-                      : 'border-ink-500 bg-transparent'
+                      ? 'border-cyan-500 bg-cyan-600'
+                      : 'border-surface-300 bg-transparent'
                   }`}
                 />
               ))}
@@ -398,7 +381,7 @@ function LockEntry({
               <button
                 type="button"
                 onClick={() => setShowPassword((value) => !value)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs text-slate-400 active:bg-ink-700"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs text-surface-600 active:bg-surface-200"
               >
                 {showPassword ? 'Hide' : 'Show'}
               </button>
@@ -415,11 +398,11 @@ function LockEntry({
 
         <div className="mt-4 min-h-[3rem]" aria-live="polite">
           {cooling ? (
-            <p className="rounded-xl bg-red-500/10 px-3 py-2 text-center text-xs leading-relaxed text-red-200">
+            <p className="rounded-xl bg-surface-300 px-3 py-2 text-center text-xs leading-relaxed text-surface-700">
               Too many attempts. Try again in {formatDelay(remaining)}.
             </p>
           ) : error ? (
-            <p className="rounded-xl bg-red-500/10 px-3 py-2 text-center text-xs leading-relaxed text-red-200">
+            <p className="rounded-xl bg-surface-300 px-3 py-2 text-center text-xs leading-relaxed text-surface-700">
               {error}
             </p>
           ) : null}
@@ -456,7 +439,7 @@ function LockEntry({
               ? setRecoveryOpen(true)
               : setCashierRecoveryOpen(true)
           }
-          className="text-xs text-slate-500 underline underline-offset-2"
+          className="text-xs text-surface-600 underline underline-offset-2"
         >
           Forgot {isPin ? 'PIN' : 'password'}?
         </button>
@@ -478,16 +461,16 @@ function LockEntry({
 
 function CashierRecoverySheet({ name, onClose }: { name: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/70" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="w-full animate-slideUp rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
-        <h2 className="text-lg font-semibold">Ask the owner</h2>
-        <p className="mt-2 text-sm leading-relaxed text-slate-300">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
+        <h2 className="text-lg font-semibold text-surface-900">Ask the owner</h2>
+        <p className="mt-2 text-sm leading-relaxed text-surface-600">
           {name}, your PIN or password can only be reset by the owner. Ask the
-          owner to open <strong className="text-slate-100">Settings → Staff</strong>{' '}
+          owner to open <strong className="text-surface-900">Settings → Staff</strong>{' '}
           on this phone.
         </p>
         <button className="btn-primary mt-5 w-full" onClick={onClose}>
@@ -504,7 +487,7 @@ function ShopFooter({ shop, onChange }: { shop: string; onChange: () => void }) 
       <button
         type="button"
         onClick={onChange}
-        className="text-xs text-slate-500 underline underline-offset-2"
+        className="text-xs text-surface-600 underline underline-offset-2"
       >
         Shop: {shop} · Change
       </button>

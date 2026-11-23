@@ -4,7 +4,6 @@ import { db } from '@/db'
 import type { CashMovement } from '@/db/types'
 import { formatMaluti, parseAmount } from '@/domain/money'
 import { businessDate, voidSale } from '@/features/sales/salesService'
-import { exportSalesCsv } from '@/features/reports/exportCsv'
 import { useAppLock } from '@/features/security/LockContext'
 import { saleCashierName } from '@/features/security/staff'
 import { downloadBlob } from '@/features/catalog/csvImport'
@@ -23,15 +22,6 @@ import {
   type CreditRow,
 } from '@/features/credit/credit'
 
-/**
- * Sales history for both roles.
- *
- * The owner sees the day's money and can void a sale. A cashier sees the same
- * day's transactions with every price and total hidden, but can work the credit
- * book: take a payment or write off a debt, at the owner's explicit request.
- * The credit book is operational (who owes what) rather than a revenue report,
- * so it shows balances to both roles while the day view stays money-free.
- */
 const UNASSIGNED = 'Unassigned'
 
 export function HistoryScreen() {
@@ -47,8 +37,6 @@ export function HistoryScreen() {
   const sales =
     useLiveQuery(async () => {
       const rows = await db.sales.where('businessDate').equals(date).toArray()
-      // Newest first. `.reverse().sortBy()` does not do this: sortBy re-sorts
-      // ascending after the cursor direction is applied.
       return rows.sort((a, b) => b.createdAt - a.createdAt)
     }, [date]) ?? []
 
@@ -77,16 +65,13 @@ export function HistoryScreen() {
     return map
   }, [creditPayments])
 
-  // The owner can narrow the day to one person's transactions. Names come from
-  // the staff roster as well as the day's rows, so a cashier with no sales still
-  // appears and an old/removed name can still be found in history.
   const staffNames = useMemo(() => {
     if (!isOwner) return []
     const names = new Set<string>()
     for (const account of accounts) names.add(account.name)
-    for (const sale of sales) names.add(sale.cashierName?.trim() || UNASSIGNED)
+    for (const sale of allSales) names.add(sale.cashierName?.trim() || UNASSIGNED)
     return [...names].sort((a, b) => a.localeCompare(b))
-  }, [accounts, isOwner, sales])
+  }, [accounts, allSales, isOwner])
   const activeFilter = staffNames.includes(cashierFilter) ? cashierFilter : 'all'
   const shownSales = useMemo(() => {
     if (activeFilter === 'all') return sales
@@ -111,223 +96,235 @@ export function HistoryScreen() {
   )
 
   return (
-    <div className="px-4 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Sales</h1>
-          <p className="text-[11px] text-slate-500">
-            {isOwner
-              ? 'Every sale by cashier, and the credit book'
-              : "Today's sales · amounts hidden"}
-          </p>
-        </div>
-        {isOwner && (
-          <button
-            onClick={() => {
-              void exportSalesCsv([date])
-                .then((blob) => downloadBlob(blob, `sales-${date}.csv`))
-                .catch(() => feedbackError())
-            }}
-            className="text-xs text-slate-400 underline"
-          >
-            Export day
-          </button>
-        )}
+    <div className="relative min-h-[calc(100dvh-84px)] overflow-hidden">
+      {/* Background image — Study C Glass Aurora */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src="/backgrounds/glass-aurora.jpg"
+          alt=""
+          className="w-full h-full object-cover"
+          aria-hidden="true"
+        />
+        <div className="absolute inset-0 bg-ice-100/50" />
       </div>
 
-      {isOwner ? (
-        <>
-          <input
-            type="date"
-            value={date}
-            max={today}
-            onChange={(e) => setDate(e.target.value || today)}
-            className="field mt-3 font-mono"
-          />
-          <label className="mt-2 block">
-            <span className="text-[10px] uppercase tracking-wider text-slate-400">
-              Cashier
-            </span>
-            <select
-              value={activeFilter}
-              onChange={(e) => {
-                setCashierFilter(e.target.value)
-                setOpenSaleId(null)
+      <div className="relative z-10 px-4 py-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-surface-900">Sales</h1>
+            <p className="text-[11px] text-surface-600">
+              {isOwner
+                ? 'Every sale by cashier, and the credit book'
+                : "Today's sales · amounts hidden"}
+            </p>
+          </div>
+          {isOwner && (
+            <button
+              onClick={() => {
+                void import('@/features/reports/exportDayPdf')
+                  .then(({ exportDaySalesPdf }) => exportDaySalesPdf(date))
+                  .then((blob) => downloadBlob(blob, `sales-${date}.pdf`))
+                  .catch(() => feedbackError())
               }}
-              className="field mt-1 font-mono"
+              className="text-xs text-surface-600 underline"
             >
-              <option value="all">All staff</option>
-              {staffNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </>
-      ) : (
-        <div className="mt-3 rounded-xl border border-ink-700 bg-ink-800/70 px-3 py-2 font-mono text-sm text-slate-300">
-          Today · {today}
+              Export day
+            </button>
+          )}
         </div>
-      )}
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="card !p-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-slate-400">Sales</p>
-          <p className="font-mono text-lg font-semibold">{totals.count}</p>
-        </div>
         {isOwner ? (
-          <div className="card !p-2.5">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Net sales</p>
-            <p className="font-mono text-lg font-semibold text-cash-400">
-              {formatMaluti(totals.net)}
-            </p>
-          </div>
-        ) : (
-          <div className="card !p-2.5">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">On credit</p>
-            <p className="font-mono text-lg font-semibold">{totals.creditCount}</p>
-          </div>
-        )}
-        {isOwner ? (
-          <div className="card !p-2.5">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Owed now</p>
-            <p className="font-mono text-lg font-semibold text-amber-400">
-              {formatMaluti(owed)}
-            </p>
-          </div>
-        ) : (
-          <div className="card !p-2.5">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Credit book</p>
-            <p className="font-mono text-lg font-semibold">{book.length} open</p>
-          </div>
-        )}
-        <div className="card !p-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-slate-400">Voided</p>
-          <p className="font-mono text-lg font-semibold text-amber-400">{totals.voidCount}</p>
-        </div>
-      </div>
-
-      <button
-        onClick={() => setCreditOpen(true)}
-        className="card mt-2 flex w-full items-center justify-between !border-amber-500/30 !bg-amber-500/10 !py-3 text-left active:scale-[0.99]"
-      >
-        <span>
-          <span className="block text-sm font-semibold text-amber-300">Credit book</span>
-          <span className="block text-[11px] text-slate-400">
-            {isOwner
-              ? `${book.length} open · ${formatMaluti(owed)} owed`
-              : `${book.length} open · take a payment or write one off`}
-          </span>
-        </span>
-        <span className="font-mono text-xs text-amber-300">Open ›</span>
-      </button>
-
-      <ul className="mt-3 space-y-2">
-        {shownSales.map((sale) => {
-          const credit = sale.paymentMethod === 'credit'
-          const balance = creditBalance(sale, paidMap)
-          const writtenOff = (sale.writtenOffAmount ?? 0) > 0
-          const hasTab =
-            (sale.tabApplied ?? 0) > 0 || (sale.tabChangeKept ?? 0) > 0
-          return (
-            <li key={sale.id}>
-              <button
-                onClick={() => setOpenSaleId(openSaleId === sale.id ? null : sale.id)}
-                className={`card w-full !py-3 text-left ${
-                  sale.status === 'voided' ? 'opacity-60' : ''
-                }`}
+          <>
+            <input
+              type="date"
+              value={date}
+              max={today}
+              onChange={(e) => setDate(e.target.value || today)}
+              className="field mt-3 font-mono"
+            />
+            <label className="mt-2 block">
+              <span className="text-[10px] uppercase tracking-wider text-surface-600">
+                Cashier
+              </span>
+              <select
+                value={activeFilter}
+                onChange={(e) => {
+                  setCashierFilter(e.target.value)
+                  setOpenSaleId(null)
+                }}
+                className="field mt-1 font-mono"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-1.5 font-mono text-sm font-semibold">
-                      #{sale.receiptNo}
-                      {sale.status === 'voided' && (
-                        <span className="chip bg-amber-500/20 text-amber-300">VOIDED</span>
+                <option value="all">All staff</option>
+                {staffNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : (
+          <div className="mt-3 rounded-xl border border-surface-300 bg-ice-200/70 px-3 py-2 font-mono text-sm text-surface-600">
+            Today · {today}
+          </div>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="card !p-2.5">
+            <p className="text-[10px] uppercase tracking-wider text-surface-600">Sales</p>
+            <p className="font-mono text-lg font-semibold">{totals.count}</p>
+          </div>
+          {isOwner ? (
+            <div className="card !p-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-surface-600">Net sales</p>
+              <p className="font-mono text-lg font-semibold text-cyan-600">
+                {formatMaluti(totals.net)}
+              </p>
+            </div>
+          ) : (
+            <div className="card !p-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-surface-600">On credit</p>
+              <p className="font-mono text-lg font-semibold">{totals.creditCount}</p>
+            </div>
+          )}
+          {isOwner ? (
+            <div className="card !p-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-surface-600">Owed now</p>
+              <p className="font-mono text-lg font-semibold text-surface-700">
+                {formatMaluti(owed)}
+              </p>
+            </div>
+          ) : (
+            <div className="card !p-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-surface-600">Credit book</p>
+              <p className="font-mono text-lg font-semibold">{book.length} open</p>
+            </div>
+          )}
+          <div className="card !p-2.5">
+            <p className="text-[10px] uppercase tracking-wider text-surface-600">Voided</p>
+            <p className="font-mono text-lg font-semibold text-surface-700">{totals.voidCount}</p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setCreditOpen(true)}
+          className="card mt-2 flex w-full items-center justify-between !border-cyan-400/30 !bg-cyan-400/10 !py-3 text-left active:scale-[0.99]"
+        >
+          <span>
+            <span className="block text-sm font-semibold text-cyan-600">Credit book</span>
+            <span className="block text-[11px] text-surface-600">
+              {isOwner
+                ? `${book.length} open · ${formatMaluti(owed)} owed`
+                : `${book.length} open · take a payment or write one off`}
+            </span>
+          </span>
+          <span className="font-mono text-xs text-cyan-600">Open ›</span>
+        </button>
+
+        <ul className="mt-3 space-y-2">
+          {shownSales.map((sale) => {
+            const credit = sale.paymentMethod === 'credit'
+            const balance = creditBalance(sale, paidMap)
+            const writtenOff = (sale.writtenOffAmount ?? 0) > 0
+            const hasTab =
+              (sale.tabApplied ?? 0) > 0 || (sale.tabChangeKept ?? 0) > 0
+            return (
+              <li key={sale.id}>
+                <button
+                  onClick={() => setOpenSaleId(openSaleId === sale.id ? null : sale.id)}
+                  className={`card w-full !py-3 text-left ${
+                    sale.status === 'voided' ? 'opacity-60' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-1.5 font-mono text-sm font-semibold">
+                        #{sale.receiptNo}
+                        {sale.status === 'voided' && (
+                          <span className="chip bg-surface-300 text-surface-700">VOIDED</span>
+                        )}
+                        {credit && sale.status === 'completed' && (
+                          <span className="chip bg-cyan-400/20 text-cyan-600">CREDIT</span>
+                        )}
+                        {hasTab && (
+                          <span className="chip bg-cyan-400/20 text-cyan-600">TAB</span>
+                        )}
+                        {writtenOff && (
+                          <span className="chip bg-surface-300 text-surface-700">WRITTEN OFF</span>
+                        )}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-surface-600">
+                        {new Date(sale.createdAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {' · '}
+                        {credit ? 'Credit' : hasTab ? 'Cash + tab' : 'Cash'}
+                        {' · '}
+                        {sale.cashierName?.trim()
+                          ? `Cashier: ${sale.cashierName.trim()}`
+                          : 'Cashier: Unassigned'}
+                        {credit && sale.customerName ? ` · ${sale.customerName}` : ''}
+                      </p>
+                      {isOwner && credit && balance > 0 && (
+                        <p className="mt-0.5 text-[11px] text-surface-700">
+                          {formatMaluti(balance)} still owed
+                        </p>
                       )}
-                      {credit && sale.status === 'completed' && (
-                        <span className="chip bg-sky-500/20 text-sky-300">CREDIT</span>
-                      )}
-                      {hasTab && (
-                        <span className="chip bg-sky-500/20 text-sky-300">TAB</span>
-                      )}
-                      {writtenOff && (
-                        <span className="chip bg-rose-500/20 text-rose-300">WRITTEN OFF</span>
-                      )}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-slate-400">
-                      {new Date(sale.createdAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {' · '}
-                      {credit ? 'Credit' : hasTab ? 'Cash + tab' : 'Cash'}
-                      {' · '}
-                      {sale.cashierName?.trim()
-                        ? `Cashier: ${sale.cashierName.trim()}`
-                        : 'Cashier: Unassigned'}
-                      {credit && sale.customerName ? ` · ${sale.customerName}` : ''}
-                    </p>
-                    {isOwner && credit && balance > 0 && (
-                      <p className="mt-0.5 text-[11px] text-amber-300">
-                        {formatMaluti(balance)} still owed
+                    </div>
+                    {isOwner && (
+                      <p
+                        className={`shrink-0 font-mono text-lg font-semibold ${
+                          sale.status === 'voided'
+                            ? 'text-surface-500 line-through'
+                            : 'text-cyan-600'
+                        }`}
+                      >
+                        {formatMaluti(sale.total)}
                       </p>
                     )}
                   </div>
-                  {isOwner && (
-                    <p
-                      className={`shrink-0 font-mono text-lg font-semibold ${
-                        sale.status === 'voided'
-                          ? 'text-slate-400 line-through'
-                          : 'text-cash-400'
-                      }`}
-                    >
-                      {formatMaluti(sale.total)}
-                    </p>
-                  )}
-                </div>
-              </button>
+                </button>
 
-              {openSaleId === sale.id && (
-                <SaleDetail
-                  saleId={sale.id}
-                  isOwner={isOwner}
-                  onVoided={() => setOpenSaleId(null)}
-                  onPay={setPayRow}
-                  onWriteOff={setWriteOffRow}
-                />
-              )}
+                {openSaleId === sale.id && (
+                  <SaleDetail
+                    saleId={sale.id}
+                    isOwner={isOwner}
+                    onVoided={() => setOpenSaleId(null)}
+                    onPay={setPayRow}
+                    onWriteOff={setWriteOffRow}
+                  />
+                )}
+              </li>
+            )
+          })}
+          {shownSales.length === 0 && (
+            <li className="py-8 text-center text-sm text-surface-500">
+              {isOwner && activeFilter !== 'all'
+                ? `No sales by ${activeFilter} on ${date}`
+                : `No sales on ${date}`}
             </li>
-          )
-        })}
-        {shownSales.length === 0 && (
-          <li className="py-8 text-center text-sm text-slate-500">
-            {isOwner && activeFilter !== 'all'
-              ? `No sales by ${activeFilter} on ${date}`
-              : `No sales on ${date}`}
-          </li>
+          )}
+        </ul>
+
+        {creditOpen && (
+          <CreditBookSheet
+            rows={book}
+            lastPayments={lastPaymentBySale}
+            isOwner={isOwner}
+            owed={owed}
+            onClose={() => setCreditOpen(false)}
+            onPay={setPayRow}
+            onWriteOff={setWriteOffRow}
+          />
         )}
-      </ul>
 
-      {creditOpen && (
-        <CreditBookSheet
-          rows={book}
-          lastPayments={lastPaymentBySale}
-          isOwner={isOwner}
-          owed={owed}
-          onClose={() => setCreditOpen(false)}
-          onPay={setPayRow}
-          onWriteOff={setWriteOffRow}
-        />
-      )}
+        {payRow && (
+          <CreditPaymentSheet row={payRow} onClose={() => setPayRow(null)} />
+        )}
 
-      {payRow && (
-        <CreditPaymentSheet row={payRow} onClose={() => setPayRow(null)} />
-      )}
-
-      {writeOffRow && (
-        <WriteOffSheet row={writeOffRow} onClose={() => setWriteOffRow(null)} />
-      )}
+        {writeOffRow && (
+          <WriteOffSheet row={writeOffRow} onClose={() => setWriteOffRow(null)} />
+        )}
+      </div>
     </div>
   )
 }
@@ -382,104 +379,104 @@ function SaleDetail({
   const row: CreditRow = { sale, paid, balance, state }
 
   return (
-    <div className="mt-2 animate-slideUp rounded-xl border border-ink-700 bg-ink-800 p-3">
+    <div className="mt-2 animate-slideUp rounded-xl border border-surface-300 bg-ice-200 p-3 shadow-soft">
       <ul className="space-y-1.5 text-sm">
         {(lines ?? []).map((l) => (
           <li key={l.id} className="flex justify-between gap-2">
-            <span className="min-w-0 flex-1 truncate text-slate-300">
+            <span className="min-w-0 flex-1 truncate text-surface-600">
               {l.qty} × {l.name}
             </span>
             {isOwner && (
-              <span className="font-mono text-slate-400">{formatMaluti(l.lineTotal)}</span>
+              <span className="font-mono text-surface-600">{formatMaluti(l.lineTotal)}</span>
             )}
           </li>
         ))}
       </ul>
 
-      <div className="mt-3 border-t border-ink-700 pt-2 text-sm">
-        <div className="flex justify-between text-slate-400">
+      <div className="mt-3 border-t border-surface-300 pt-2 text-sm">
+        <div className="flex justify-between text-surface-600">
           <span>Cashier</span>
           <span>{sale.cashierName?.trim() || 'Unassigned'}</span>
         </div>
-        <div className="flex justify-between text-slate-400">
+        <div className="flex justify-between text-surface-600">
           <span>Payment</span>
           <span>{credit ? 'Credit' : hasTab ? 'Cash + tab' : 'Cash'}</span>
         </div>
         {credit && (
-          <div className="flex justify-between text-slate-400">
+          <div className="flex justify-between text-surface-600">
             <span>Customer</span>
-            <span className="ml-2 truncate">{sale.customerName || '—'}</span>
+            <span className="ml-2 truncate text-surface-900">{sale.customerName || '—'}</span>
           </div>
         )}
         {hasTab && tab && (
-          <div className="flex justify-between text-slate-400">
+          <div className="flex justify-between text-surface-600">
             <span>Tab</span>
-            <span className="ml-2 truncate">{tab.name}</span>
+            <span className="ml-2 truncate text-surface-900">{tab.name}</span>
           </div>
         )}
 
         {isOwner && (
           <>
             <div className="flex justify-between">
-              <span className="text-slate-400">Subtotal</span>
-              <span className="font-mono">{formatMaluti(sale.subtotal)}</span>
+              <span className="text-surface-600">Subtotal</span>
+              <span className="font-mono text-surface-900">{formatMaluti(sale.subtotal)}</span>
             </div>
             {(sale.tabApplied ?? 0) > 0 && (
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-surface-600">
                 <span>Paid from tab</span>
-                <span className="font-mono text-sky-300">
+                <span className="font-mono text-cyan-600">
                   {formatMaluti(sale.tabApplied ?? 0)}
                 </span>
               </div>
             )}
             {sale.amountTendered !== null && (
               <>
-                <div className="flex justify-between text-slate-400">
+                <div className="flex justify-between text-surface-600">
                   <span>Cash received</span>
-                  <span className="font-mono">{formatMaluti(sale.amountTendered)}</span>
+                  <span className="font-mono text-surface-900">{formatMaluti(sale.amountTendered)}</span>
                 </div>
-                <div className="flex justify-between text-slate-400">
+                <div className="flex justify-between text-surface-600">
                   <span>Cash change</span>
-                  <span className="font-mono">{formatMaluti(cashChange)}</span>
+                  <span className="font-mono text-surface-900">{formatMaluti(cashChange)}</span>
                 </div>
               </>
             )}
             {(sale.tabChangeKept ?? 0) > 0 && (
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-surface-600">
                 <span>Change kept on tab</span>
-                <span className="font-mono text-sky-300">
+                <span className="font-mono text-cyan-600">
                   {formatMaluti(sale.tabChangeKept ?? 0)}
                 </span>
               </div>
             )}
             {credit && sale.status === 'completed' && (
               <>
-                <div className="flex justify-between text-slate-400">
+                <div className="flex justify-between text-surface-600">
                   <span>Paid so far</span>
-                  <span className="font-mono">{formatMaluti(paid)}</span>
+                  <span className="font-mono text-surface-900">{formatMaluti(paid)}</span>
                 </div>
-                <div className="flex justify-between text-slate-400">
+                <div className="flex justify-between text-surface-600">
                   <span>Balance</span>
-                  <span className="font-mono">{formatMaluti(balance)}</span>
+                  <span className="font-mono text-surface-900">{formatMaluti(balance)}</span>
                 </div>
               </>
             )}
             {credit && sale.status === 'voided' && (
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-surface-600">
                 <span>Refunded</span>
-                <span className="font-mono">{formatMaluti(paid)}</span>
+                <span className="font-mono text-surface-900">{formatMaluti(paid)}</span>
               </div>
             )}
             <div className="mt-1 flex justify-between font-semibold">
               <span>Total</span>
-              <span className="font-mono text-cash-400">{formatMaluti(sale.total)}</span>
+              <span className="font-mono text-cyan-600">{formatMaluti(sale.total)}</span>
             </div>
           </>
         )}
 
         {isOwner && payments.length > 0 && (
-          <div className="mt-2 rounded-lg border border-ink-700 bg-ink-900/50 p-2">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">
+          <div className="mt-2 rounded-lg border border-surface-300 bg-ice-200/50 p-2">
+            <p className="text-[10px] uppercase tracking-wider text-surface-600">
               Credit payments received
             </p>
             <ul className="mt-1 space-y-1">
@@ -490,10 +487,10 @@ function SaleDetail({
                     key={m.id}
                     className="flex items-baseline justify-between gap-2 text-[11px]"
                   >
-                    <span className="min-w-0 truncate text-slate-400">
+                    <span className="min-w-0 truncate text-surface-500">
                       {m.businessDate} · {m.staffName?.trim() || 'Not recorded'}
                     </span>
-                    <span className="shrink-0 font-mono text-slate-300">
+                    <span className="shrink-0 font-mono text-surface-600">
                       {formatMaluti(m.delta)}
                     </span>
                   </li>
@@ -505,12 +502,12 @@ function SaleDetail({
         {!isOwner && credit && (
           <div className="mt-1 flex justify-between font-semibold">
             <span>Credit status</span>
-            <span className="text-slate-200">{CREDIT_STATE_LABEL[state]}</span>
+            <span className="text-surface-900">{CREDIT_STATE_LABEL[state]}</span>
           </div>
         )}
 
         {writtenOff && (
-          <p className="mt-2 rounded-lg bg-rose-500/10 px-2.5 py-2 text-[11px] text-rose-200">
+          <p className="mt-2 rounded-lg bg-surface-300 px-2.5 py-2 text-[11px] text-surface-700">
             {isOwner
               ? writtenOffAmount > 0
                 ? `Written off ${formatMaluti(writtenOffAmount)}`
@@ -522,7 +519,7 @@ function SaleDetail({
         )}
       </div>
 
-      {sale.note && <p className="mt-2 text-xs text-slate-500">{sale.note}</p>}
+      {sale.note && <p className="mt-2 text-xs text-surface-600">{sale.note}</p>}
 
       {credit && sale.status === 'completed' && balance > 0 && (
         <div className="mt-3 flex gap-2">
@@ -580,20 +577,20 @@ function CreditBookSheet({
   onWriteOff: (row: CreditRow) => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/75" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="max-h-[88vh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="max-h-[88vh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold">Credit book</h2>
-            <p className="text-[11px] text-slate-400">
+            <h2 className="text-lg font-bold text-surface-900">Credit book</h2>
+            <p className="text-[11px] text-surface-600">
               {rows.length} open{isOwner ? ` · ${formatMaluti(owed)} owed` : ''}
             </p>
           </div>
-          <button className="text-xs text-slate-400 underline" onClick={onClose}>
+          <button className="text-xs text-surface-600 underline" onClick={onClose}>
             Close
           </button>
         </div>
@@ -605,24 +602,24 @@ function CreditBookSheet({
               <li key={row.sale.id} className="card !py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate font-semibold">
+                    <p className="truncate font-semibold text-surface-900">
                       {row.sale.customerName || 'Customer'}
                     </p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-surface-600">
                       #{row.sale.receiptNo} · {row.sale.businessDate} ·{' '}
                       {CREDIT_STATE_LABEL[row.state]}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
+                    <p className="mt-0.5 text-[11px] text-surface-500">
                       Sold by {row.sale.cashierName?.trim() || 'Unassigned'}
                     </p>
                     {isOwner && lastPayment && (
-                      <p className="mt-0.5 text-[11px] text-slate-500">
+                      <p className="mt-0.5 text-[11px] text-surface-500">
                         Last payment {lastPayment.businessDate} ·{' '}
                         {lastPayment.staffName?.trim() || 'Not recorded'}
                       </p>
                     )}
                   </div>
-                  <p className="shrink-0 font-mono text-lg font-semibold text-amber-300">
+                  <p className="shrink-0 font-mono text-lg font-semibold text-cyan-600">
                     {formatMaluti(row.balance)}
                   </p>
                 </div>
@@ -644,7 +641,7 @@ function CreditBookSheet({
             )
           })}
           {rows.length === 0 && (
-            <li className="py-8 text-center text-sm text-slate-500">
+            <li className="py-8 text-center text-sm text-surface-500">
               No customer owes anything.
             </li>
           )}
@@ -686,17 +683,19 @@ function CreditPaymentSheet({ row, onClose }: { row: CreditRow; onClose: () => v
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end bg-black/80" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="w-full animate-slideUp rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
-        <p className="text-xs uppercase tracking-wider text-slate-400">Credit payment</p>
-        <p className="mt-1 text-lg font-semibold">{row.sale.customerName || 'Customer'}</p>
-        <p className="text-xs text-slate-400">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
+        <p className="text-xs uppercase tracking-wider text-surface-600">Credit payment</p>
+        <p className="mt-1 text-lg font-semibold text-surface-900">
+          {row.sale.customerName || 'Customer'}
+        </p>
+        <p className="text-xs text-surface-600">
           Receipt #{row.sale.receiptNo} · balance{' '}
-          <span className="font-mono text-amber-300">{formatMaluti(row.balance)}</span>
+          <span className="font-mono text-cyan-600">{formatMaluti(row.balance)}</span>
         </p>
 
         <input
@@ -708,7 +707,7 @@ function CreditPaymentSheet({ row, onClose }: { row: CreditRow; onClose: () => v
           autoFocus
         />
         <button
-          className="mt-2 text-xs text-slate-400 underline"
+          className="mt-2 text-xs text-surface-600 underline"
           onClick={() => setAmount(String(row.balance / 100))}
         >
           Pay full balance
@@ -721,14 +720,14 @@ function CreditPaymentSheet({ row, onClose }: { row: CreditRow; onClose: () => v
           placeholder="Note (optional)"
         />
 
-        <p className="mt-2 text-center text-sm text-slate-300">
+        <p className="mt-2 text-center text-sm text-surface-600">
           {valid
             ? `Balance after this: ${formatMaluti(remaining)}`
             : `Enter up to ${formatMaluti(row.balance)}`}
         </p>
 
         {error && (
-          <p className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300">{error}</p>
+          <p className="mt-2 rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
         )}
 
         <div className="mt-4 flex gap-2">
@@ -774,20 +773,22 @@ function WriteOffSheet({ row, onClose }: { row: CreditRow; onClose: () => void }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end bg-black/80" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="w-full animate-slideUp rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
-        <p className="text-xs uppercase tracking-wider text-slate-400">Write off a debt</p>
-        <p className="mt-1 text-lg font-semibold">{row.sale.customerName || 'Customer'}</p>
-        <p className="text-xs text-slate-400">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
+        <p className="text-xs uppercase tracking-wider text-surface-600">Write off a debt</p>
+        <p className="mt-1 text-lg font-semibold text-surface-900">
+          {row.sale.customerName || 'Customer'}
+        </p>
+        <p className="text-xs text-surface-600">
           Receipt #{row.sale.receiptNo} · balance to write off{' '}
-          <span className="font-mono text-rose-300">{formatMaluti(row.balance)}</span>
+          <span className="font-mono text-cyan-600">{formatMaluti(row.balance)}</span>
         </p>
 
-        <p className="mt-3 rounded-lg bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-200">
+        <p className="mt-3 rounded-lg bg-surface-300 px-3 py-2 text-[11px] leading-relaxed text-surface-700">
           This cancels the debt and records a bad-debt expense. No cash leaves the
           drawer. It cannot be undone from this screen.
         </p>
@@ -801,7 +802,7 @@ function WriteOffSheet({ row, onClose }: { row: CreditRow; onClose: () => void }
         />
 
         {error && (
-          <p className="mt-2 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300">{error}</p>
+          <p className="mt-2 rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
         )}
 
         <div className="mt-4 flex gap-2">

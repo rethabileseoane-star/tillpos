@@ -42,10 +42,26 @@ const tillElement = (
   </LicenseProvider>
 )
 
+// The background laboratory is a development-only design surface. It sits
+// outside the licence and staff-lock gates, and the dynamic import is gated by
+// import.meta.env.DEV so production builds never ship the lab chunk.
+const labRoutes = import.meta.env.DEV
+  ? [
+      {
+        path: '/lab/backgrounds',
+        lazy: async () => {
+          const module = await import('@/lab/backgrounds/BackgroundLab')
+          return { Component: module.BackgroundLab }
+        },
+      },
+    ]
+  : []
+
 // hash routing keeps deep links working even from a static host with no
 // server-side rewrite rules.
 const router = createHashRouter([
   { path: '/admin', element: <LicenseAdminScreen /> },
+  ...labRoutes,
   { path: '/', element: tillElement, children: [
     { index: true, element: <SellScreen /> },
     { path: 'catalog', element: <CatalogScreen /> },

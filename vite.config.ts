@@ -49,6 +49,10 @@ export default defineConfig({
     host: true,
     port: 5173,
     https: lanHttps(),
+    // Design artifacts are written by the screenshot tooling while the server
+    // runs. Watching them adds no value and can crash the watcher on Windows
+    // when a file is still locked.
+    watch: { ignored: ['**/design/**', '**/dist/**', '**/lab/backgrounds/assets/**'] },
   },
   preview: {
     host: true,

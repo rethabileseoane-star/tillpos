@@ -15,14 +15,6 @@ import {
 } from './tabs'
 import { createTab, recordTabCredit, recordTabPayout } from './tabService'
 
-/**
- * Customer tabs: money the shop owes the customer.
- *
- * This is the mirror of the credit book. A customer who overpays when the till
- * has no change leaves the difference here, then spends it down on later
- * visits. Every movement is an append-only entry, so the balance always has a
- * history behind it.
- */
 export function TabsScreen() {
   const { session } = useAppLock()
   const [search, setSearch] = useState('')
@@ -51,117 +43,130 @@ export function TabsScreen() {
   const cashTab = rows.find((row) => row.tab.id === cashSheet?.tabId)?.tab ?? null
 
   return (
-    <div className="px-4 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold">Customer tabs</h1>
-          <p className="text-xs leading-relaxed text-slate-400">
-            Money the shop owes — change kept, deposits, and what customers spend.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setNewTabOpen(true)}
-          className="btn-primary !px-3 !py-2 text-sm"
-        >
-          New tab
-        </button>
+    <div className="relative min-h-[calc(100dvh-84px)] overflow-hidden">
+      {/* Background image — Study D Crystal Waves */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src="/backgrounds/crystal-waves.jpg"
+          alt=""
+          className="w-full h-full object-cover"
+          aria-hidden="true"
+        />
+        <div className="absolute inset-0 bg-ice-100/55" />
       </div>
 
-      <div className="card mt-3 border-sky-500/40 bg-sky-500/10">
-        <p className="text-[10px] uppercase tracking-wider text-slate-400">
-          Shop owes customers
-        </p>
-        <p className="mt-1 font-mono text-3xl font-bold text-sky-300">
-          {formatMaluti(total)}
-        </p>
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-          This is the opposite of customer credit: cash you are holding for
-          customers, not money they owe you.
-        </p>
-      </div>
+      <div className="relative z-10 px-4 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-surface-900">Customer tabs</h1>
+            <p className="text-xs leading-relaxed text-surface-600">
+              Money the shop owes — change kept, deposits, and what customers spend.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setNewTabOpen(true)}
+            className="btn-primary !px-3 !py-2 text-sm"
+          >
+            New tab
+          </button>
+        </div>
 
-      <input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Search a name or phone"
-        className="field mt-3"
-        type="search"
-      />
-
-      {filtered.length === 0 ? (
-        <div className="card mt-3 text-center !py-8">
-          <p className="text-sm font-medium">
-            {rows.length === 0 ? 'No customer tabs yet' : 'No matching tabs'}
+        <div className="card mt-3 border-cyan-400/40 bg-cyan-400/10">
+          <p className="text-[10px] uppercase tracking-wider text-surface-600">
+            Shop owes customers
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
-            {rows.length === 0
-              ? 'Keep change on a tab at checkout, or create one now and add money to it.'
-              : 'Try another name or phone number.'}
+          <p className="mt-1 font-mono text-3xl font-bold text-cyan-600">
+            {formatMaluti(total)}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-surface-600">
+            This is the opposite of customer credit: cash you are holding for
+            customers, not money they owe you.
           </p>
         </div>
-      ) : (
-        <ul className="mt-3 space-y-1.5">
-          {filtered.map((row) => (
-            <li key={row.tab.id}>
-              <button
-                type="button"
-                onClick={() => setDetailId(row.tab.id)}
-                className="card flex w-full items-center gap-3 !py-3 text-left active:bg-ink-700"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 font-semibold text-sky-300">
-                  {initials(row.tab.name)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{row.tab.name}</span>
-                  <span className="block truncate text-[11px] text-slate-500">
-                    {row.tab.phone || (row.entryCount === 0 ? 'No movements yet' : 'Customer tab')}
-                  </span>
-                </span>
-                <span className="text-right">
-                  <span className="block font-mono text-sm font-semibold text-sky-300">
-                    {formatMaluti(row.balance)}
-                  </span>
-                  <span className="block text-[10px] text-slate-500">
-                    {row.entryCount} {row.entryCount === 1 ? 'movement' : 'movements'}
-                  </span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
 
-      {newTabOpen && (
-        <NewTabSheet
-          onClose={() => setNewTabOpen(false)}
-          onCreated={(tab) => {
-            setNewTabOpen(false)
-            setDetailId(tab.id)
-          }}
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search a name or phone"
+          className="field mt-3"
+          type="search"
         />
-      )}
 
-      {detail && (
-        <TabDetailSheet
-          tab={detail.tab}
-          balance={detail.balance}
-          entries={entries.filter((entry) => entry.tabId === detail.tab.id)}
-          onClose={() => setDetailId(null)}
-          onAdd={() => setCashSheet({ tabId: detail.tab.id, kind: 'credit' })}
-          onPayOut={() => setCashSheet({ tabId: detail.tab.id, kind: 'payout' })}
-        />
-      )}
+        {filtered.length === 0 ? (
+          <div className="card mt-3 text-center !py-8">
+            <p className="text-sm font-medium text-surface-900">
+              {rows.length === 0 ? 'No customer tabs yet' : 'No matching tabs'}
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-surface-500">
+              {rows.length === 0
+                ? 'Keep change on a tab at checkout, or create one now and add money to it.'
+                : 'Try another name or phone number.'}
+            </p>
+          </div>
+        ) : (
+          <ul className="mt-3 space-y-1.5">
+            {filtered.map((row) => (
+              <li key={row.tab.id}>
+                <button
+                  type="button"
+                  onClick={() => setDetailId(row.tab.id)}
+                  className="card flex w-full items-center gap-3 !py-3 text-left active:bg-surface-200"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/15 font-semibold text-cyan-600">
+                    {initials(row.tab.name)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-surface-900">{row.tab.name}</span>
+                    <span className="block truncate text-[11px] text-surface-500">
+                      {row.tab.phone || (row.entryCount === 0 ? 'No movements yet' : 'Customer tab')}
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <span className="block font-mono text-sm font-semibold text-cyan-600">
+                      {formatMaluti(row.balance)}
+                    </span>
+                    <span className="block text-[10px] text-surface-500">
+                      {row.entryCount} {row.entryCount === 1 ? 'movement' : 'movements'}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {cashSheet && cashTab && (
-        <TabCashSheet
-          tab={cashTab}
-          kind={cashSheet.kind}
-          balance={totalTabBalance(entries.filter((entry) => entry.tabId === cashTab.id))}
-          staffName={saleCashierName(session)}
-          onClose={() => setCashSheet(null)}
-        />
-      )}
+        {newTabOpen && (
+          <NewTabSheet
+            onClose={() => setNewTabOpen(false)}
+            onCreated={(tab) => {
+              setNewTabOpen(false)
+              setDetailId(tab.id)
+            }}
+          />
+        )}
+
+        {detail && (
+          <TabDetailSheet
+            tab={detail.tab}
+            balance={detail.balance}
+            entries={entries.filter((entry) => entry.tabId === detail.tab.id)}
+            onClose={() => setDetailId(null)}
+            onAdd={() => setCashSheet({ tabId: detail.tab.id, kind: 'credit' })}
+            onPayOut={() => setCashSheet({ tabId: detail.tab.id, kind: 'payout' })}
+          />
+        )}
+
+        {cashSheet && cashTab && (
+          <TabCashSheet
+            tab={cashTab}
+            kind={cashSheet.kind}
+            balance={totalTabBalance(entries.filter((entry) => entry.tabId === cashTab.id))}
+            staffName={saleCashierName(session)}
+            onClose={() => setCashSheet(null)}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -183,13 +188,13 @@ function TabDetailSheet({
 }) {
   const sorted = [...entries].sort((a, b) => b.createdAt - a.createdAt)
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/80 sm:items-center sm:justify-center sm:p-4">
-      <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6 sm:max-w-md sm:rounded-2xl">
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600 sm:hidden" />
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4">
+      <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold">{tab.name}</h2>
-            <p className="truncate text-xs text-slate-500">
+            <h2 className="truncate text-lg font-semibold text-surface-900">{tab.name}</h2>
+            <p className="truncate text-xs text-surface-600">
               {tab.phone || 'Customer tab'}
               {tab.note ? ` · ${tab.note}` : ''}
             </p>
@@ -197,18 +202,18 @@ function TabDetailSheet({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-ink-700"
+            className="rounded-lg px-2 py-1 text-sm text-surface-600 hover:bg-surface-200"
             aria-label="Close"
           >
             ✕
           </button>
         </div>
 
-        <div className="mt-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
-          <p className="text-[10px] uppercase tracking-wider text-slate-400">
+        <div className="mt-3 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3">
+          <p className="text-[10px] uppercase tracking-wider text-surface-600">
             Shop owes
           </p>
-          <p className="font-mono text-3xl font-bold text-sky-300">
+          <p className="font-mono text-3xl font-bold text-cyan-600">
             {formatMaluti(balance)}
           </p>
         </div>
@@ -222,11 +227,11 @@ function TabDetailSheet({
           </button>
         </div>
 
-        <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-surface-600">
           Movements
         </h3>
         {sorted.length === 0 ? (
-          <p className="mt-2 rounded-xl border border-ink-700 px-4 py-5 text-center text-sm text-slate-500">
+          <p className="mt-2 rounded-xl border border-surface-300 px-4 py-5 text-center text-sm text-surface-500">
             No movements yet. Add money, or use this tab at checkout.
           </p>
         ) : (
@@ -240,17 +245,17 @@ function TabDetailSheet({
                     >
                       {TAB_KIND_LABEL[entry.kind]}
                     </span>
-                    <p className="mt-1 truncate text-[11px] text-slate-400">
+                    <p className="mt-1 truncate text-[11px] text-surface-600">
                       {entry.businessDate} {localTime(entry.createdAt)}
                       {entry.staffName ? ` · ${entry.staffName}` : ''}
                     </p>
                     {entry.note && (
-                      <p className="truncate text-[11px] text-slate-500">{entry.note}</p>
+                      <p className="truncate text-[11px] text-surface-500">{entry.note}</p>
                     )}
                   </div>
                   <span
                     className={`shrink-0 font-mono text-sm font-semibold ${
-                      entry.amount >= 0 ? 'text-sky-300' : 'text-amber-300'
+                      entry.amount >= 0 ? 'text-cyan-600' : 'text-surface-700'
                     }`}
                   >
                     {entry.amount >= 0 ? '+' : ''}
@@ -296,11 +301,11 @@ function NewTabSheet({
 
   return (
     <SheetShell title="New customer tab" onClose={onClose}>
-      <p className="mt-1 text-sm leading-relaxed text-slate-400">
+      <p className="mt-1 text-sm leading-relaxed text-surface-600">
         A tab records money the shop is holding for a customer. You can add the
         opening amount next.
       </p>
-      <label className="mt-4 block text-xs font-medium text-slate-400" htmlFor="tab-name">
+      <label className="mt-4 block text-xs font-medium text-surface-600" htmlFor="tab-name">
         Customer name
       </label>
       <input
@@ -311,7 +316,7 @@ function NewTabSheet({
         className="field mt-1"
         autoFocus
       />
-      <label className="mt-3 block text-xs font-medium text-slate-400" htmlFor="tab-phone">
+      <label className="mt-3 block text-xs font-medium text-surface-600" htmlFor="tab-phone">
         Phone (optional)
       </label>
       <input
@@ -322,7 +327,7 @@ function NewTabSheet({
         className="field mt-1"
         inputMode="tel"
       />
-      <label className="mt-3 block text-xs font-medium text-slate-400" htmlFor="tab-note">
+      <label className="mt-3 block text-xs font-medium text-surface-600" htmlFor="tab-note">
         Note (optional)
       </label>
       <input
@@ -332,7 +337,7 @@ function NewTabSheet({
         placeholder="Anything the next cashier should know"
         className="field mt-1"
       />
-      {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+      {error && <p className="mt-3 text-sm text-surface-700">{error}</p>}
       <button
         type="button"
         disabled={busy || !name.trim()}
@@ -398,15 +403,15 @@ function TabCashSheet({
       title={isPayout ? `Pay out · ${tab.name}` : `Add money · ${tab.name}`}
       onClose={onClose}
     >
-      <p className="mt-1 text-sm leading-relaxed text-slate-400">
+      <p className="mt-1 text-sm leading-relaxed text-surface-600">
         {isPayout
           ? 'Cash leaves the drawer and the tab balance goes down.'
           : 'Cash comes into the drawer and the shop owes it on the tab.'}
       </p>
-      <p className="mt-2 font-mono text-xs text-slate-400">
-        Current balance: <span className="text-sky-300">{formatMaluti(balance)}</span>
+      <p className="mt-2 font-mono text-xs text-surface-600">
+        Current balance: <span className="text-cyan-600">{formatMaluti(balance)}</span>
       </p>
-      <label className="mt-4 block text-xs font-medium text-slate-400" htmlFor="tab-amount">
+      <label className="mt-4 block text-xs font-medium text-surface-600" htmlFor="tab-amount">
         Amount
       </label>
       <input
@@ -422,12 +427,12 @@ function TabCashSheet({
         <button
           type="button"
           onClick={() => setAmount((balance / 100).toFixed(2))}
-          className="mt-2 text-xs text-cash-400 underline underline-offset-2"
+          className="mt-2 text-xs text-cyan-600 underline underline-offset-2"
         >
           Pay out the whole balance ({formatMaluti(balance)})
         </button>
       )}
-      <label className="mt-3 block text-xs font-medium text-slate-400" htmlFor="tab-cash-note">
+      <label className="mt-3 block text-xs font-medium text-surface-600" htmlFor="tab-cash-note">
         Note (optional)
       </label>
       <input
@@ -437,7 +442,7 @@ function TabCashSheet({
         placeholder={isPayout ? 'Why the customer is taking cash' : 'Where the money came from'}
         className="field mt-1"
       />
-      {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+      {error && <p className="mt-3 text-sm text-surface-700">{error}</p>}
       <button
         type="button"
         disabled={busy || cents === null || cents <= 0 || tooMuch}
@@ -460,15 +465,15 @@ function SheetShell({
   children: ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/80 sm:items-center sm:justify-center sm:p-4">
-      <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6 sm:max-w-md sm:rounded-2xl">
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600 sm:hidden" />
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4">
+      <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
         <div className="flex items-start justify-between gap-3">
-          <h2 className="min-w-0 truncate text-lg font-semibold">{title}</h2>
+          <h2 className="min-w-0 truncate text-lg font-semibold text-surface-900">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-ink-700"
+            className="rounded-lg px-2 py-1 text-sm text-surface-600 hover:bg-surface-200"
             aria-label="Close"
           >
             ✕

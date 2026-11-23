@@ -12,13 +12,6 @@ import { addShop, suggestShopCode } from './shopManager'
 import { loadShopName } from '@/features/settings/shopName'
 import { runSync } from '@/sync/scheduler'
 
-/**
- * Settings → Shops.
- *
- * The owner can add another shop on this phone and switch between them. Each
- * shop is a separate local database and a separate cloud login. Switching
- * reloads the app because the Dexie connection is opened once at module load.
- */
 export function ShopCard() {
   const [shops, setShops] = useState<ShopProfile[]>(() => listShops())
   const [active] = useState<ShopProfile>(() => loadedShop)
@@ -29,8 +22,6 @@ export function ShopCard() {
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
-    // The name is shop-wide and may have arrived from another till. Keep the
-    // picker's label in step with the name printed on reports.
     void loadShopName()
       .then((name) => {
         if (!name) return
@@ -50,8 +41,6 @@ export function ShopCard() {
       return
     }
     setBusy(shop.id)
-    // Best-effort flush before the module reload. The outbox is durable, so a
-    // timeout here loses nothing and the next visit sends the remainder.
     await Promise.race([
       runSync().catch(() => undefined),
       new Promise((resolve) => setTimeout(resolve, 2_500)),
@@ -61,8 +50,8 @@ export function ShopCard() {
 
   return (
     <div className="card mt-3">
-      <h2 className="text-sm font-semibold">Shops</h2>
-      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+      <h2 className="text-sm font-semibold text-surface-900">Shops</h2>
+      <p className="mt-1 text-xs leading-relaxed text-surface-600">
         Each shop keeps its own catalog, sales, cash, staff and cloud sync. The
         shop code is permanent and is also used by that shop's Supabase login.
       </p>
@@ -74,20 +63,20 @@ export function ShopCard() {
             <div
               key={shop.id}
               className={`rounded-xl border p-3 ${
-                current ? 'border-cash-500/40 bg-cash-500/5' : 'border-ink-700 bg-ink-800/60'
+                current ? 'border-cyan-400/40 bg-cyan-400/5' : 'border-surface-300 bg-ice-200/60'
               }`}
             >
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{shop.name}</span>
+                    <span className="truncate text-sm font-medium text-surface-900">{shop.name}</span>
                     {current && (
-                      <span className="rounded-full bg-cash-500/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cash-400">
+                      <span className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-600">
                         Current
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 font-mono text-[11px] text-slate-500">{shop.id}</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-surface-500">{shop.id}</p>
                 </div>
                 {!current && (
                   <button
@@ -114,7 +103,7 @@ export function ShopCard() {
         {atShopLimit ? `Shop limit reached (${shopLimit})` : 'Add another shop'}
       </button>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
         {atShopLimit
           ? `This licence allows ${shopLimit} shop${shopLimit === 1 ? '' : 's'}. Ask your supplier to raise the limit before adding another.`
           : 'A new shop starts with the owner account only. Its catalog is empty, and it uses its own Supabase login with the same shop code.'}
@@ -126,7 +115,6 @@ export function ShopCard() {
           onAdded={(shop) => {
             setShops(listShops())
             feedbackSuccess()
-            // Keep the sheet open so the success panel can offer to open it.
             return shop
           }}
           onOpen={(shop) => void switchTo(shop)}
@@ -143,7 +131,6 @@ function AddShopSheet({
 }: {
   onClose: () => void
   onAdded: (shop: ShopProfile) => ShopProfile
-  /** Switch to the new shop; the parent asks for confirmation and flushes sync. */
   onOpen: (shop: ShopProfile) => void
 }) {
   const [name, setName] = useState('')
@@ -168,25 +155,25 @@ function AddShopSheet({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-surface-900/40 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[92dvh] w-full max-w-md animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6 sm:rounded-2xl"
+        className="max-h-[92dvh] w-full max-w-md animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:rounded-2xl shadow-lift"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Add a shop"
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600 sm:hidden" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
 
         {added ? (
           <>
-            <h2 className="text-lg font-semibold">{added.name} is ready</h2>
-            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+            <h2 className="text-lg font-semibold text-surface-900">{added.name} is ready</h2>
+            <p className="mt-2 text-sm leading-relaxed text-surface-600">
               It has the owner account and an empty catalog. Open it now to add
               products, staff and its cloud sync login. Its shop code is{' '}
-              <span className="font-mono text-cash-300">{added.id}</span>.
+              <span className="font-mono text-cyan-600">{added.id}</span>.
             </p>
             <button
               type="button"
@@ -202,13 +189,13 @@ function AddShopSheet({
           </>
         ) : (
           <>
-            <h2 className="text-lg font-semibold">Add a shop</h2>
-            <p className="mt-1 text-sm leading-relaxed text-slate-400">
+            <h2 className="text-lg font-semibold text-surface-900">Add a shop</h2>
+            <p className="mt-1 text-sm leading-relaxed text-surface-600">
               The owner account is copied to the new shop with the same owner
               password. No products, sales or cashiers are copied.
             </p>
 
-            <label className="mt-4 block text-xs font-medium text-slate-400" htmlFor="shop-name">
+            <label className="mt-4 block text-xs font-medium text-surface-600" htmlFor="shop-name">
               Shop name
             </label>
             <input
@@ -221,7 +208,7 @@ function AddShopSheet({
               autoFocus
             />
 
-            <label className="mt-3 block text-xs font-medium text-slate-400" htmlFor="shop-code">
+            <label className="mt-3 block text-xs font-medium text-surface-600" htmlFor="shop-code">
               Shop code
             </label>
             <input
@@ -235,14 +222,14 @@ function AddShopSheet({
               autoCorrect="off"
               spellCheck={false}
             />
-            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-1 text-[11px] leading-relaxed text-surface-500">
               Permanent. It must match this shop's Supabase login claim{' '}
               <span className="font-mono">app_metadata.shop_id</span>. Lowercase
               letters, numbers and hyphens only.
             </p>
 
             {error && (
-              <p className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-red-200">
+              <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs leading-relaxed text-surface-700">
                 {error}
               </p>
             )}

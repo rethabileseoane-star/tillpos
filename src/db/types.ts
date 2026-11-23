@@ -246,7 +246,12 @@ export interface ProductDraft {
    * which should fall back to the selling price rather than inventing M0.
    */
   cost: Cents | null
-  stockQty: number
+  /**
+   * `null` means the file did not state a stock figure, which is not the same
+   * as stating zero. Treating them alike meant a price-only re-import wiped the
+   * stock of every product it touched.
+   */
+  stockQty: number | null
   /**
    * `null` means the file did not state a threshold, which is not the same as
    * stating zero. Treating them alike made it impossible to clear a threshold

@@ -33,18 +33,6 @@ type SheetState =
   | { kind: 'turnOff' }
   | null
 
-/**
- * Settings → Staff & app lock.
- *
- * The owner sees one account and every cashier on this phone. Cashiers never
- * reach this screen: their navigation has no Settings tab and the route guard
- * sends them back to Sell. That is the boundary that makes resetting a PIN and
- * seeing the whole ledger owner-only.
- *
- * The owner must use a password before a cashier can be added. A four-digit
- * owner PIN on a phone a cashier carries is both guessable and likely shared.
- * Existing PIN-only locks are migrated as-is and are upgraded here.
- */
 export function SecurityCard() {
   const { accounts, biometric, refresh, lockNow } = useAppLock()
   const [sheet, setSheet] = useState<SheetState>(null)
@@ -108,8 +96,8 @@ export function SecurityCard() {
     <div className="card mt-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Staff &amp; app lock</h2>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">
+          <h2 className="text-sm font-semibold text-surface-900">Staff &amp; app lock</h2>
+          <p className="mt-1 text-xs leading-relaxed text-surface-600">
             {hasStaff
               ? `On — ${cashiers.length} cashier${cashiers.length === 1 ? '' : 's'}. Every sale records who made it.`
               : 'Off — anyone who opens this app can use the till.'}
@@ -117,7 +105,7 @@ export function SecurityCard() {
         </div>
         <span
           className={`chip ${
-            hasStaff ? 'bg-cash-500/15 text-cash-400' : 'bg-ink-700 text-slate-400'
+            hasStaff ? 'bg-cyan-400/15 text-cyan-600' : 'bg-surface-300 text-surface-700'
           }`}
         >
           {hasStaff ? 'On' : 'Off'}
@@ -135,29 +123,29 @@ export function SecurityCard() {
           >
             Set up owner account
           </button>
-          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+          <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
             The owner sees every section and uses a password. Add a cashier
             afterwards for each person who sells on this phone.
           </p>
         </>
       ) : owner ? (
         <>
-          <div className="mt-3 rounded-xl border border-ink-700 p-3">
+          <div className="mt-3 rounded-xl border border-surface-300 p-3">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{owner.name}</p>
-                <p className="text-[11px] text-slate-400">
+                <p className="truncate text-sm font-semibold text-surface-900">{owner.name}</p>
+                <p className="text-[11px] text-surface-600">
                   Owner ·{' '}
                   {owner.kind === 'pin'
                     ? `PIN, ${owner.length} digits`
                     : 'password'}
                 </p>
               </div>
-              <span className="chip shrink-0 bg-cash-500/15 text-cash-400">Owner</span>
+              <span className="chip shrink-0 bg-cyan-400/15 text-cyan-600">Owner</span>
             </div>
 
             {ownerNeedsPassword && (
-              <p className="mt-2 rounded-lg bg-amber-500/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-200">
+              <p className="mt-2 rounded-lg bg-surface-300 px-2 py-1.5 text-[11px] leading-relaxed text-surface-700">
                 The owner still uses a PIN. Set a password before adding cashiers.
               </p>
             )}
@@ -180,19 +168,19 @@ export function SecurityCard() {
 
           <div className="mt-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Cashiers</h3>
-              <span className="text-[11px] text-slate-500">
+              <h3 className="text-sm font-semibold text-surface-900">Cashiers</h3>
+              <span className="text-[11px] text-surface-500">
                 {cashiers.length} account{cashiers.length === 1 ? '' : 's'}
               </span>
             </div>
 
             <div className="mt-2 space-y-2">
               {cashiers.map((account) => (
-                <div key={account.id} className="rounded-xl border border-ink-700 p-3">
+                <div key={account.id} className="rounded-xl border border-surface-300 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{account.name}</p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="truncate text-sm font-medium text-surface-900">{account.name}</p>
+                      <p className="text-[11px] text-surface-600">
                         Cashier ·{' '}
                         {account.kind === 'pin'
                           ? `PIN, ${account.length} digits`
@@ -201,7 +189,7 @@ export function SecurityCard() {
                     </div>
                     <div className="flex shrink-0 gap-1">
                       <button
-                        className="rounded-lg bg-ink-700 px-2.5 py-2 text-[11px] active:bg-ink-600"
+                        className="rounded-lg bg-surface-300 px-2.5 py-2 text-[11px] active:bg-surface-400"
                         onClick={() => {
                           setMessage(null)
                           setSheet({ kind: 'resetCashier', account })
@@ -210,7 +198,7 @@ export function SecurityCard() {
                         Reset
                       </button>
                       <button
-                        className="rounded-lg bg-ink-700 px-2.5 py-2 text-[11px] text-red-300 active:bg-ink-600"
+                        className="rounded-lg bg-surface-300 px-2.5 py-2 text-[11px] text-surface-700 active:bg-surface-400"
                         onClick={() => {
                           setMessage(null)
                           setSheet({ kind: 'removeCashier', account })
@@ -224,7 +212,7 @@ export function SecurityCard() {
               ))}
 
               {cashiers.length === 0 && (
-                <p className="text-xs leading-relaxed text-slate-500">
+                <p className="text-xs leading-relaxed text-surface-500">
                   No cashier accounts yet. Add one for each person who sells on
                   this phone.
                 </p>
@@ -242,17 +230,17 @@ export function SecurityCard() {
               Add cashier
             </button>
             {ownerNeedsPassword && (
-              <p className="mt-1 text-[11px] text-amber-200">
+              <p className="mt-1 text-[11px] text-surface-700">
                 Set the owner password above first.
               </p>
             )}
           </div>
 
-          <div className="mt-3 rounded-xl border border-ink-700 p-3">
+          <div className="mt-3 rounded-xl border border-surface-300 p-3">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <h3 className="text-sm font-semibold">Owner biometrics</h3>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-400">
+                <h3 className="text-sm font-semibold text-surface-900">Owner biometrics</h3>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-surface-600">
                   Fingerprint or face unlock for the owner account on this
                   device. Cashiers always use their PIN or password.
                 </p>
@@ -260,8 +248,8 @@ export function SecurityCard() {
               <span
                 className={`chip shrink-0 ${
                   biometric
-                    ? 'bg-cash-500/15 text-cash-400'
-                    : 'bg-ink-700 text-slate-400'
+                    ? 'bg-cyan-400/15 text-cyan-600'
+                    : 'bg-surface-300 text-surface-700'
                 }`}
               >
                 {biometric ? 'On' : 'Off'}
@@ -279,7 +267,7 @@ export function SecurityCard() {
               {biometric ? 'Remove biometrics' : 'Add biometrics'}
             </button>
             {(supportNote || (!biometric && !authenticator)) && (
-              <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+              <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
                 {supportNote ||
                   "No fingerprint or face is enrolled in this device's settings yet."}
               </p>
@@ -297,7 +285,7 @@ export function SecurityCard() {
               Turn off app lock
             </button>
           ) : (
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-3 text-[11px] leading-relaxed text-surface-500">
               Remove every cashier account before turning off the app lock.
             </p>
           )}
@@ -307,14 +295,14 @@ export function SecurityCard() {
       {message && (
         <p
           className={`mt-2 rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
-            message.error ? 'bg-red-500/10 text-red-200' : 'bg-cash-500/10 text-cash-400'
+            message.error ? 'bg-surface-300 text-surface-700' : 'bg-cyan-400/10 text-cyan-600'
           }`}
         >
           {message.text}
         </p>
       )}
 
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-3 text-[11px] leading-relaxed text-surface-500">
         This locks the screen and separates the owner's sections from a cashier's.
         It does not encrypt the records already stored on this device: a cashier
         phone still holds the local database. Use “Lock now” before leaving the
@@ -621,7 +609,7 @@ function CashierSheet({
         {needsName ? (
           <NameField value={name} onChange={setName} autoFocus />
         ) : (
-          <div className="rounded-xl bg-ink-700/50 px-3 py-2 text-sm">
+          <div className="rounded-xl bg-surface-300 px-3 py-2 text-sm">
             {account?.name}
           </div>
         )}
@@ -730,7 +718,7 @@ function TurnOffSheet({
       await removeAllStaff(current)
       await refresh()
       feedbackSuccess()
-      onSaved('App lock turned off. The till now opens without a secret.')
+      onSaved('App lock turned off. The till now opens without a login.')
       onClose()
     } catch (err) {
       feedbackError()
@@ -837,18 +825,18 @@ function SecretFields({
   return (
     <>
       {allowPin && (
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-ink-700 p-1">
+        <div className="grid grid-cols-2 gap-2 rounded-xl border border-surface-300 p-1">
           {(['pin', 'password'] as SecretKind[]).map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => onKindChange?.(option)}
               className={`rounded-lg px-2 py-2 text-xs font-semibold ${
-                kind === option ? 'bg-ink-600 text-cash-400' : 'text-slate-400'
+                kind === option ? 'bg-surface-700 text-cyan-600' : 'text-surface-600'
               }`}
             >
               {option === 'pin' ? 'PIN' : 'Password'}
-              <span className="block text-[10px] font-normal text-slate-500">
+              <span className="block text-[10px] font-normal text-surface-500">
                 {option === 'pin'
                   ? `${PIN_MIN}–${PIN_MAX} digits`
                   : `${PASSWORD_MIN}+ characters`}
@@ -906,7 +894,7 @@ function SecretFields({
 function FormError({ text }: { text: string }) {
   return (
     <p
-      className="rounded-xl bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-red-200"
+      className="rounded-xl bg-surface-300 px-3 py-2 text-xs leading-relaxed text-surface-700"
       aria-live="polite"
     >
       {text}
@@ -956,22 +944,22 @@ function Sheet({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-surface-900/40 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[92dvh] w-full max-w-md animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6 sm:rounded-2xl"
+        className="max-h-[92dvh] w-full max-w-md animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:rounded-2xl shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600 sm:hidden" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">{title}</h2>
-            <p className="mt-0.5 text-xs leading-relaxed text-slate-400">{subtitle}</p>
+            <h2 className="text-lg font-semibold text-surface-900">{title}</h2>
+            <p className="mt-0.5 text-xs leading-relaxed text-surface-600">{subtitle}</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 active:bg-ink-700"
+            className="rounded-lg p-1.5 text-surface-600 active:bg-surface-200"
             aria-label="Close"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">

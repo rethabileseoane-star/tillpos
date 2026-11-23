@@ -32,17 +32,17 @@ const MOVEMENT_LABEL: Record<CashReason, string> = {
 }
 
 const MOVEMENT_CHIP: Record<CashReason, string> = {
-  sale: 'bg-cash-500/15 text-cash-400',
-  void: 'bg-red-500/15 text-red-300',
-  float: 'bg-slate-500/15 text-slate-300',
-  cash_in: 'bg-cash-500/15 text-cash-400',
-  purchase: 'bg-indigo-500/15 text-indigo-300',
-  drawing: 'bg-amber-500/15 text-amber-300',
-  expense: 'bg-rose-500/15 text-rose-300',
-  loan_repay: 'bg-violet-500/15 text-violet-300',
-  credit_payment: 'bg-cash-500/15 text-cash-400',
-  tab_credit: 'bg-sky-500/15 text-sky-300',
-  tab_payout: 'bg-amber-500/15 text-amber-300',
+  sale: 'bg-cyan-400/15 text-cyan-600',
+  void: 'bg-surface-700/15 text-surface-700',
+  float: 'bg-surface-600/15 text-surface-600',
+  cash_in: 'bg-cyan-400/15 text-cyan-600',
+  purchase: 'bg-surface-700/15 text-surface-700',
+  drawing: 'bg-surface-600/15 text-surface-600',
+  expense: 'bg-surface-700/15 text-surface-700',
+  loan_repay: 'bg-surface-600/15 text-surface-600',
+  credit_payment: 'bg-cyan-400/15 text-cyan-600',
+  tab_credit: 'bg-cyan-400/15 text-cyan-600',
+  tab_payout: 'bg-surface-600/15 text-surface-600',
 }
 
 type SheetKind = 'buy' | 'float' | 'cash_in' | 'drawing' | 'expense' | 'loan_repay'
@@ -94,8 +94,6 @@ export function MoneyScreen() {
     [products],
   )
 
-  // Purchase lines joined back to their cash movement, so a "Bought stock"
-  // entry can say "Gum x10, bread x4" under the payment.
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
   const purchaseItems = useMemo(() => {
     const map = new Map<string, { name: string; qty: number }[]>()
@@ -110,77 +108,90 @@ export function MoneyScreen() {
   }, [stockMoves, productById])
 
   return (
-    <div className="px-4 py-4">
-      <h1 className="text-xl font-bold">Money</h1>
-      <p className="text-xs text-slate-400">The till, the stock, and the cash that moves</p>
-
-      {/* The number that must match the tin. */}
-      <div className="card mt-3 border-cash-500/40 bg-cash-500/10 shadow-lift">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">
-              Money in the till
-            </p>
-            <p className="mt-1 font-mono text-4xl font-bold text-cash-400">
-              {formatMaluti(balance)}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cash-500/20 text-cash-400">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-6 w-6">
-                <path d="M2 7h20v10H2z M2 10h20M6 14h4" />
-              </svg>
-            </div>
-            <button
-              onClick={() => setSheet('float')}
-              className="text-xs text-cash-400 underline underline-offset-2"
-            >
-              Set float
-            </button>
-          </div>
-        </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
-          Today · {formatMaluti(todaySales)} cash from sales and credit
-          {todayStock < 0 && <> · {formatMaluti(-todayStock)} on stock</>}
-          {' '}· stock in shop ≈ {formatMaluti(stockWorth)}
-          {loansOwed > 0 && <> · loans owed {formatMaluti(loansOwed)}</>}
-          {tabsOwed > 0 && <> · shop owes tabs {formatMaluti(tabsOwed)}</>}
-        </p>
-      </div>
-
-      {/* Daily actions */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <ActionButton label="Bought stock" sub="till out, stock up" onTap={() => setSheet('buy')} />
-        <ActionButton label="Money in" sub="extra cash" onTap={() => setSheet('cash_in')} />
-        <ActionButton label="Owner took" sub="to pocket" onTap={() => setSheet('drawing')} />
-        <ActionButton label="Paid out" sub="rent, transport…" onTap={() => setSheet('expense')} />
-        <ActionButton
-          label="Pay loan"
-          sub={loansOwed > 0 ? `still owe ${formatMaluti(loansOwed)}` : 'money borrowed in'}
-          onTap={() => setSheet('loan_repay')}
+    <div className="relative min-h-[calc(100dvh-84px)] overflow-hidden">
+      {/* Background image — Study A Ice Flow */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src="/backgrounds/ice-flow.jpg"
+          alt=""
+          className="w-full h-full object-cover"
+          aria-hidden="true"
         />
+        <div className="absolute inset-0 bg-ice-100/55" />
       </div>
 
-      {/* Movement history */}
-      <h2 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        Recent movements
-      </h2>
-      {cash.length === 0 ? (
-        <p className="mt-2 rounded-xl border border-ink-700 px-4 py-6 text-center text-sm text-slate-500">
-          Nothing yet — sales and the buttons above build this list.
-        </p>
-      ) : (
-        <ul className="mt-2 space-y-1.5">
-          {cash.slice(0, 25).map((m) => (
-            <MovementRow key={m.id} m={m} items={purchaseItems.get(m.id)} />
-          ))}
-        </ul>
-      )}
+      <div className="relative z-10 px-4 py-4">
+        <h1 className="text-xl font-bold text-surface-900">Money</h1>
+        <p className="text-xs text-surface-600">The till, the stock, and the cash that moves</p>
 
-      {sheet === 'buy' && <BuyStockSheet products={products} onClose={() => setSheet(null)} />}
-      {sheet && sheet !== 'buy' && (
-        <QuickAmountSheet kind={sheet} onClose={() => setSheet(null)} />
-      )}
+        {/* The number that must match the tin. */}
+        <div className="card mt-3 border-cyan-400/40 bg-cyan-400/10 shadow-lift">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-surface-600">
+                Money in the till
+              </p>
+              <p className="mt-1 font-mono text-4xl font-bold text-cyan-600">
+                {formatMaluti(balance)}
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-400/20 text-cyan-600">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-6 w-6">
+                  <path d="M2 7h20v10H2z M2 10h20M6 14h4" />
+                </svg>
+              </div>
+              <button
+                onClick={() => setSheet('float')}
+                className="text-xs text-cyan-600 underline underline-offset-2"
+              >
+                Set float
+              </button>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-surface-600">
+            Today · {formatMaluti(todaySales)} cash from sales and credit
+            {todayStock < 0 && <> · {formatMaluti(-todayStock)} on stock</>}
+            {' '}· stock in shop ≈ {formatMaluti(stockWorth)}
+            {loansOwed > 0 && <> · loans owed {formatMaluti(loansOwed)}</>}
+            {tabsOwed > 0 && <> · shop owes tabs {formatMaluti(tabsOwed)}</>}
+          </p>
+        </div>
+
+        {/* Daily actions */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <ActionButton label="Bought stock" sub="till out, stock up" onTap={() => setSheet('buy')} />
+          <ActionButton label="Money in" sub="extra cash" onTap={() => setSheet('cash_in')} />
+          <ActionButton label="Owner took" sub="to pocket" onTap={() => setSheet('drawing')} />
+          <ActionButton label="Paid out" sub="rent, transport…" onTap={() => setSheet('expense')} />
+          <ActionButton
+            label="Pay loan"
+            sub={loansOwed > 0 ? `still owe ${formatMaluti(loansOwed)}` : 'money borrowed in'}
+            onTap={() => setSheet('loan_repay')}
+          />
+        </div>
+
+        {/* Movement history */}
+        <h2 className="mt-5 text-xs font-semibold uppercase tracking-wider text-surface-600">
+          Recent movements
+        </h2>
+        {cash.length === 0 ? (
+          <p className="mt-2 rounded-xl border border-surface-300 px-4 py-6 text-center text-sm text-surface-500">
+            Nothing yet — sales and the buttons above build this list.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1.5">
+            {cash.slice(0, 25).map((m) => (
+              <MovementRow key={m.id} m={m} items={purchaseItems.get(m.id)} />
+            ))}
+          </ul>
+        )}
+
+        {sheet === 'buy' && <BuyStockSheet products={products} onClose={() => setSheet(null)} />}
+        {sheet && sheet !== 'buy' && (
+          <QuickAmountSheet kind={sheet} onClose={() => setSheet(null)} />
+        )}
+      </div>
     </div>
   )
 }
@@ -189,10 +200,10 @@ function ActionButton({ label, sub, onTap }: { label: string; sub: string; onTap
   return (
     <button
       onClick={onTap}
-      className="card flex flex-col items-center gap-0.5 !border-ink-700 !py-4 transition active:scale-[0.98] hover:border-cash-500/30"
+      className="card flex flex-col items-center gap-0.5 !border-surface-300 !py-4 transition active:scale-[0.98] hover:border-cyan-400/30"
     >
-      <span className="text-sm font-semibold">{label}</span>
-      <span className="text-[11px] text-slate-500">{sub}</span>
+      <span className="text-sm font-semibold text-surface-900">{label}</span>
+      <span className="text-[11px] text-surface-600">{sub}</span>
     </button>
   )
 }
@@ -208,16 +219,16 @@ function MovementRow({ m, items }: { m: CashMovement; items?: { name: string; qt
           {MOVEMENT_LABEL[m.reason]}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs text-slate-300">
+          <p className="truncate text-xs text-surface-600">
             {m.note || MOVEMENT_LABEL[m.reason]}
           </p>
-          <p className="text-[10px] text-slate-500">
+          <p className="text-[10px] text-surface-500">
             {date} · {time}
           </p>
         </div>
         <span
           className={`shrink-0 font-mono text-sm font-semibold ${
-            positive ? 'text-cash-400' : 'text-amber-400'
+            positive ? 'text-cyan-600' : 'text-surface-700'
           }`}
         >
           {positive ? '+' : ''}
@@ -225,7 +236,7 @@ function MovementRow({ m, items }: { m: CashMovement; items?: { name: string; qt
         </span>
       </div>
       {items && items.length > 0 && (
-        <p className="mt-1 truncate pl-1 text-[11px] text-indigo-300/80">
+        <p className="mt-1 truncate pl-1 text-[11px] text-surface-600">
           {items.map((i) => `${i.name} ×${i.qty}`).join(', ')}
         </p>
       )}
@@ -321,17 +332,17 @@ function QuickAmountSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/75" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="w-full animate-slideUp rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
-        <h2 className="text-lg font-semibold">{config.title}</h2>
-        <p className="mt-0.5 text-xs text-slate-400">{config.label}</p>
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
+        <h2 className="text-lg font-semibold text-surface-900">{config.title}</h2>
+        <p className="mt-0.5 text-xs text-surface-600">{config.label}</p>
 
         {kind === 'cash_in' && (
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-ink-700 p-1">
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-surface-300 p-1">
             {(
               [
                 { value: 'capital', label: 'Own money', sub: 'capital' },
@@ -342,11 +353,11 @@ function QuickAmountSheet({
                 key={opt.value}
                 onClick={() => setKind2(opt.value)}
                 className={`rounded-lg px-2 py-2 text-xs font-semibold ${
-                  kind2 === opt.value ? 'bg-ink-600 text-cash-400' : 'text-slate-400'
+                  kind2 === opt.value ? 'bg-surface-700 text-cyan-600' : 'text-surface-600'
                 }`}
               >
                 {opt.label}
-                <span className="block text-[10px] font-normal text-slate-500">{opt.sub}</span>
+                <span className="block text-[10px] font-normal text-surface-500">{opt.sub}</span>
               </button>
             ))}
           </div>
@@ -381,9 +392,9 @@ function QuickAmountSheet({
         </div>
 
         {config.hint && (
-          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">{config.hint}</p>
+          <p className="mt-3 text-[11px] leading-relaxed text-surface-600">{config.hint}</p>
         )}
-        {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+        {error && <p className="mt-2 text-xs text-surface-700">{error}</p>}
 
         <div className="mt-5 flex gap-2">
           <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
@@ -484,8 +495,6 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
 
   const onScanned = async (code: string) => {
     setScanOpen(false)
-    // Resolve aliases and UPC/EAN padding the same way the till does. Looking
-    // only at the primary barcode rejected a product scanned by an alias.
     const found = await lookupProduct(code)
     if (!found || found.deletedAt != null || found.active === false) {
       setError(`"${code}" is not in the catalog — add it there first, then buy stock.`)
@@ -500,14 +509,14 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
     .filter((p): p is Product => Boolean(p))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/75" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
-        <h2 className="text-lg font-semibold">Bought stock</h2>
-        <p className="mt-0.5 text-xs text-slate-400">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
+        <h2 className="text-lg font-semibold text-surface-900">Bought stock</h2>
+        <p className="mt-0.5 text-xs text-surface-600">
           Money leaves the till, stock goes up
         </p>
 
@@ -529,11 +538,11 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
 
         {/* Added so far */}
         {selected.length > 0 && (
-          <ul className="mt-3 space-y-1.5 rounded-xl border border-ink-700 bg-ink-900/50 p-2.5">
+          <ul className="mt-3 space-y-1.5 rounded-xl border border-surface-300 bg-ice-200/50 p-2.5">
             {selected.map((p) => (
               <li key={p.id} className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
-                <span className="font-mono text-[11px] text-slate-400">
+                <span className="min-w-0 flex-1 truncate text-sm text-surface-900">{p.name}</span>
+                <span className="font-mono text-[11px] text-surface-600">
                   {formatMaluti(p.cost ?? p.price)} each
                 </span>
                 <div className="flex items-center gap-2">
@@ -549,7 +558,7 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
         {/* Picker */}
         <p className="label mt-3">Tap to add</p>
         {matches.length === 0 ? (
-          <p className="mt-1 rounded-lg bg-ink-900/40 px-3 py-4 text-center text-xs text-slate-500">
+          <p className="mt-1 rounded-lg bg-surface-300 px-3 py-4 text-center text-xs text-surface-600">
             Nothing in the catalog matches — add the item in the Catalog tab first.
           </p>
         ) : (
@@ -557,16 +566,16 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
             {matches.slice(0, 60).map((p) => (
               <li key={p.id}>
                 <button
-                  className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left active:bg-ink-700"
+                  className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left active:bg-surface-200"
                   onClick={() => bump(p.id, 1)}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">{p.name}</span>
-                    <span className="block text-[10px] text-slate-500">
+                    <span className="block truncate text-sm text-surface-900">{p.name}</span>
+                    <span className="block text-[10px] text-surface-500">
                       {formatMaluti(p.cost ?? p.price)} each · {p.stockQty} in stock
                     </span>
                   </span>
-                  <span className="font-mono text-lg text-cash-400">
+                  <span className="font-mono text-lg text-cyan-600">
                     {sel[p.id] ? `×${sel[p.id]}` : '+'}
                   </span>
                 </button>
@@ -594,7 +603,7 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
               placeholder="0.00"
             />
             {amountTouched && bumped > 0 && (paid === null || paid !== bumped) && (
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-surface-600">
                 Suggested from item costs: {formatMaluti(bumped)}
               </p>
             )}
@@ -611,7 +620,7 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
           </div>
         </div>
 
-        {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+        {error && <p className="mt-2 text-xs text-surface-700">{error}</p>}
 
         <div className="mt-5 flex gap-2">
           <button className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
@@ -637,7 +646,7 @@ function QtyButton({ label, onTap }: { label: string; onTap: () => void }) {
     <button
       onClick={onTap}
       aria-label={label}
-      className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink-700 font-mono text-base text-slate-200 active:bg-ink-600"
+      className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-300 font-mono text-base text-surface-900 active:bg-surface-400"
     >
       {label}
     </button>

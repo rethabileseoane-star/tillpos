@@ -14,6 +14,8 @@ import { db, repairStockCache, TillDatabase } from '../src/db'
 import type { Product } from '../src/db/types'
 import { importProducts, exportProductsCsv } from '../src/features/catalog/csvImport'
 import { exportCatalogPdf } from '../src/features/catalog/exportCatalogPdf'
+import { exportDaySalesPdf } from '../src/features/reports/exportDayPdf'
+import { csvBlobToPdf } from '../src/features/reports/exportPdf'
 import { commitSale, voidSale, adjustStock, businessDate } from '../src/features/sales/salesService'
 import {
   buyStock,
@@ -278,6 +280,22 @@ async function main() {
     assert.equal(await ledgerSum(sugar.id), 35, 're-import movement wrong')
   })
 
+  await check('a re-import with no stock column leaves stock alone', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    // A price list often omits stock. That must mean "not stated", not zero.
+    const priceOnly = [
+      'barcode,name,price,category',
+      '6001234567892,Sugar 1kg,1600,Grocery',
+    ].join('\n')
+    const res = await importProducts(csvFile(priceOnly, 'price-only.csv'))
+    assert.equal(res.updated, 1)
+    const sugar = (await productByBarcode('6001234567892'))!
+    assert.equal(sugar.price, 160000)
+    assert.equal(sugar.stockQty, 40, 'a file without a stock column wiped the stock')
+    assert.equal(await ledgerSum(sugar.id), 40, 'a phantom stock movement was recorded')
+  })
+
   await check('import leaves one coalesced outbox row per product', async () => {
     // Rows are keyed per entity id, so re-importing must not pile up duplicates.
     const productRows = await db.outbox.where('entity').equals('products').count()
@@ -344,6 +362,23 @@ async function main() {
     assert.match(res.errors[0]!.reason, /price/)
   })
 
+  await check('a malformed stock figure is skipped, not treated as zero', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const badStock = [
+      'barcode,name,price,stockQty,lowStockThreshold,category',
+      '6001234567892,Sugar 1kg,1600,forty,10,Grocery',
+    ].join('\n')
+    const res = await importProducts(csvFile(badStock, 'bad-stock.csv'))
+    assert.equal(res.updated, 0)
+    assert.equal(res.errors.length, 1)
+    assert.match(res.errors[0]!.reason, /stock/)
+    const sugar = (await productByBarcode('6001234567892'))!
+    assert.equal(sugar.stockQty, 40, 'a malformed stock figure wiped the shelf')
+    assert.equal(sugar.price, 150000, 'the bad row should not have been applied')
+    assert.equal(await ledgerSum(sugar.id), 40, 'a phantom movement was recorded')
+  })
+
   await check('name and description columns map to the right fields', async () => {
     await reset()
     const text = [
@@ -368,6 +403,18 @@ async function main() {
     assert.equal(await lookupProduct('6001234567'), undefined)
     // A truncation that still identifies exactly one product is still allowed.
     assert.equal((await lookupProduct('600123456789'))?.name, 'Sugar 1kg')
+  })
+
+  await check('a soft-deleted product cannot be sold again', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const sugar = (await productByBarcode('6001234567892'))!
+    await db.products.update(sugar.id, { deletedAt: Date.now(), active: false })
+    assert.equal(
+      await lookupProduct('6001234567892'),
+      undefined,
+      'a deleted product still resolved at the till',
+    )
   })
 
   console.log('sale commit')
@@ -1493,6 +1540,52 @@ async function main() {
     assert.ok(raw.includes('TOTALS'), 'catalog totals row missing')
   })
 
+  await check('the day sales PDF is mobile-sized and carries the day totals', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    await commitSale({
+      lines: [await lineFor('6001234567892', 2)],
+      paymentMethod: 'cash',
+      amountTendered: 400000,
+    })
+    const blob = await exportDaySalesPdf(businessDate())
+    assert.equal(blob.type, 'application/pdf')
+    const buf = Buffer.from(await blob.arrayBuffer())
+    assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-', 'not a PDF header')
+    assert.ok(buf.length > 2000, `suspiciously small PDF: ${buf.length} bytes`)
+    const raw = buf.toString('latin1')
+    assert.ok(raw.includes('Completed sales'), 'day totals missing from the PDF')
+    assert.ok(raw.includes('Cash sales'), 'payment breakdown missing from the PDF')
+  })
+
+  await check('a CSV export prints as a PDF with its summary notes', async () => {
+    const csv = new Blob(
+      [
+        [
+          'date,amount_mwk,note',
+          '2026-11-14,1500.00,A long note that has to wrap inside its column',
+          '',
+          '# Total (MWK): 1500.00',
+          '# Cash in drawer now (MWK): 500.00',
+        ].join('\n'),
+      ],
+      { type: 'text/csv' },
+    )
+    const blob = await csvBlobToPdf(csv, {
+      title: 'Cash ledger',
+      subtitle: 'Period: 2026-11-14',
+    })
+    assert.equal(blob.type, 'application/pdf')
+    const buf = Buffer.from(await blob.arrayBuffer())
+    assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-', 'not a PDF header')
+    const raw = buf.toString('latin1')
+    assert.ok(raw.includes('Cash ledger'), 'title missing from the PDF')
+    // jsPDF escapes parentheses in the raw PDF stream, so assert on the note
+    // heading and a parenthesis-free fragment instead of the literal string.
+    assert.ok(raw.includes('Summary & notes'), 'summary block missing from the PDF')
+    assert.ok(raw.includes('Cash in drawer now'), 'footer note missing from the PDF')
+  })
+
   console.log('customer tabs')
 
   await check('a tab holds cash and pays it out, and the drawer follows', async () => {
@@ -1658,6 +1751,29 @@ async function main() {
     )
     assert.equal(bsAfter.customerCredits, 1000000)
     assert.equal(bsAfter.check, 0)
+  })
+
+  await check('a tab that covers the sale still records the cash handed over', async () => {
+    await reset()
+    await importProducts(csvFile(CSV))
+    const tab = await createTab({ name: 'Full Tab' })
+    await recordTabCredit({ tabId: tab.id, amount: 1000000 })
+
+    const sale = await commitSale({
+      lines: [await lineFor('6001234567892', 4)], // M6,000
+      paymentMethod: 'cash',
+      amountTendered: 500000, // M5,000 handed over
+      tabId: tab.id,
+      tabApplied: 600000, // the tab covers the whole sale
+      changeToTab: true, // the M5,000 change stays on the tab
+    })
+
+    assert.equal(sale.total, 600000)
+    assert.equal(sale.amountTendered, 500000, 'the typed tender was dropped')
+    assert.equal(sale.change, 500000)
+    assert.equal(sale.tabChangeKept, 500000)
+    assert.equal(await getTabBalance(tab.id), 900000)
+    assert.equal(await cashBalance(), 1500000)
   })
 
   await check('keeping change with no existing tab creates one', async () => {

@@ -3,13 +3,6 @@ import { feedbackError, feedbackSuccess } from '@/ui/feedback'
 import { copyText } from '@/licensing/format'
 import { useLicense } from '@/licensing/LicenseContext'
 
-/**
- * Settings → Licence.
- *
- * Deliberately plain: the shopkeeper needs to answer "is this till licensed,
- * which phone is it, and when must it next see the internet". The seller's
- * admin screen is where keys and device allow-lists are managed.
- */
 export function LicenseCard() {
   const license = useLicense()
   const [note, setNote] = useState<string | null>(null)
@@ -44,8 +37,8 @@ export function LicenseCard() {
 
   return (
     <div className="card mt-3">
-      <h2 className="text-sm font-semibold">Licence</h2>
-      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+      <h2 className="text-sm font-semibold text-surface-900">Licence</h2>
+      <p className="mt-1 text-xs leading-relaxed text-surface-600">
         One subscription covers this business. This phone must be on the
         licence’s device list, and the till checks in whenever it has internet.
       </p>
@@ -88,7 +81,7 @@ export function LicenseCard() {
         </button>
       </div>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
         Activation and checks need internet. After a successful check, the till
         keeps working offline for the period set on the licence — 24 hours by
         default. If that runs out, the till locks until it can reach the licence
@@ -96,7 +89,7 @@ export function LicenseCard() {
       </p>
 
       <button
-        className="btn-ghost mt-3 w-full !py-2.5 text-sm text-red-300"
+        className="btn-danger mt-3 w-full !py-2.5 text-sm"
         disabled={license.busy}
         onClick={() => void deactivate()}
       >
@@ -104,12 +97,12 @@ export function LicenseCard() {
       </button>
 
       {license.error && (
-        <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs leading-relaxed text-surface-700">
           {license.error}
         </p>
       )}
       {note && (
-        <p className="mt-3 rounded-xl bg-ink-900 px-3 py-2 text-xs leading-relaxed text-slate-300">
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs leading-relaxed text-surface-700">
           {note}
         </p>
       )}
@@ -130,10 +123,10 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-slate-400">{label}</dt>
+      <dt className="text-surface-600">{label}</dt>
       <dd
         className={`truncate ${mono ? 'font-mono text-xs' : ''} ${
-          tone === 'good' ? 'text-cash-400' : tone === 'warn' ? 'text-amber-300' : ''
+          tone === 'good' ? 'text-cyan-600' : tone === 'warn' ? 'text-surface-700' : ''
         }`}
       >
         {value}

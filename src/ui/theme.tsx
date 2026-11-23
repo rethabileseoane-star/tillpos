@@ -12,8 +12,8 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'till.theme'
-const DARK = '#0b1120'
-const LIGHT = '#f3f5f8'
+const DARK = '#0b2b43'
+const LIGHT = '#f7fcff'
 
 type ThemeValue = {
   /** What the owner chose: light, dark, or follow the device. */
@@ -40,7 +40,7 @@ export function resolveTheme(
 export function readThemePreference(): ThemePreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    return isThemePreference(stored) ? stored : 'dark'
+    return isThemePreference(stored) ? stored : 'light'
   } catch {
     return 'dark'
   }

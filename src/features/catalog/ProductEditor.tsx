@@ -33,8 +33,6 @@ export function ProductEditor({ product, onClose }: Props) {
   const parsedPrice = parseAmount(price)
   const parsedCost = parseAmount(cost)
   const profit = parsedPrice !== null && parsedCost !== null ? parsedPrice - parsedCost : null
-  // An empty field means zero, but text that is not a number must not silently
-  // become zero: saving would wipe the stock figure (and record a movement).
   const parsedStock = stock.trim() === '' ? 0 : Number(stock)
   const stockValid = Number.isFinite(parsedStock)
   const allValid =
@@ -73,7 +71,6 @@ export function ProductEditor({ product, onClose }: Props) {
       await db.transaction('rw', db.products, db.stockMovements, db.outbox, async () => {
         const normalized = barcodes.map((b) => normalizeBarcode(b)).filter(Boolean)
 
-        // No two products may share a barcode.
         const clash = await db.products
           .where('barcodes')
           .anyOf(...normalized)
@@ -155,7 +152,6 @@ export function ProductEditor({ product, onClose }: Props) {
     setScanOpen(false)
     if (!normalized) return
 
-    // If this code is already on the product, just focus the name field.
     if (barcodes.map((b) => normalizeBarcode(b)).includes(normalized)) {
       setError(null)
       nameRef.current?.focus()
@@ -174,21 +170,20 @@ export function ProductEditor({ product, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/75" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
-        <h2 className="text-lg font-semibold">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
+        <h2 className="text-lg font-semibold text-surface-900">
           {product ? 'Edit item' : 'Add item'}
         </h2>
 
         <div className="mt-4 space-y-3">
-          {/* Barcodes */}
           <div>
             <label className="label" htmlFor="pe-barcodes">Barcodes</label>
-            <p className="text-[10px] text-slate-500 mb-1">
+            <p className="text-[10px] text-surface-600 mb-1">
               Scan or type each barcode. The first one is the primary.
             </p>
             <div className="space-y-2">
@@ -206,7 +201,7 @@ export function ProductEditor({ product, onClose }: Props) {
                     type="button"
                     onClick={() => removeBarcode(i)}
                     disabled={barcodes.length <= 1}
-                    className="shrink-0 h-9 w-9 rounded-lg bg-ink-700 active:bg-ink-600 text-red-400"
+                    className="shrink-0 h-9 w-9 rounded-lg bg-surface-300 active:bg-surface-400 text-surface-700"
                     aria-label="Remove barcode"
                   >
                     −
@@ -216,7 +211,7 @@ export function ProductEditor({ product, onClose }: Props) {
               <button
                 type="button"
                 onClick={addBarcode}
-                className="w-fit text-xs text-cash-400 underline"
+                className="w-fit text-xs text-cyan-600 underline"
               >
                 + Add another barcode
               </button>
@@ -231,7 +226,7 @@ export function ProductEditor({ product, onClose }: Props) {
                 Scan barcode
               </button>
               {barcodes.some((b) => b && !isValidBarcode(normalizeBarcode(b))) && (
-                <p className="mt-1 text-xs text-red-400">One or more barcodes look invalid</p>
+                <p className="mt-1 text-xs text-surface-700">One or more barcodes look invalid</p>
               )}
             </div>
           </div>
@@ -272,7 +267,7 @@ export function ProductEditor({ product, onClose }: Props) {
                 placeholder="0.00"
               />
               {parsedPrice !== null && (
-                <p className="mt-1 text-xs text-cash-400">{formatMaluti(parsedPrice)}</p>
+                <p className="mt-1 text-xs text-cyan-600">{formatMaluti(parsedPrice)}</p>
               )}
             </div>
             <div>
@@ -286,16 +281,16 @@ export function ProductEditor({ product, onClose }: Props) {
                 placeholder="Same as price"
               />
               {parsedCost !== null && (
-                <p className="mt-1 text-xs text-slate-400">{formatMaluti(parsedCost)} each</p>
+                <p className="mt-1 text-xs text-surface-600">{formatMaluti(parsedCost)} each</p>
               )}
             </div>
           </div>
 
           {parsedPrice !== null && parsedCost !== null && (
-            <div className="bg-ink-700/50 rounded-lg p-2">
-              <p className="text-[10px] uppercase tracking-wider text-slate-400 mb-1">Profit per unit</p>
+            <div className="bg-surface-300 rounded-lg p-2">
+              <p className="text-[10px] uppercase tracking-wider text-surface-600 mb-1">Profit per unit</p>
               <p className={`font-mono text-sm font-semibold ${
-                profit !== null && profit < 0 ? 'text-red-400' : 'text-cash-400'
+                profit !== null && profit < 0 ? 'text-surface-700' : 'text-cyan-600'
               }`}>
                 {formatMaluti(profit ?? 0)}
               </p>
@@ -351,7 +346,7 @@ export function ProductEditor({ product, onClose }: Props) {
         </div>
 
         {error && (
-          <p className="mt-3 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300">{error}</p>
+          <p className="mt-3 rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
         )}
 
         <div className="mt-5 flex gap-2">

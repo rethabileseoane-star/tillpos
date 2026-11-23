@@ -5,16 +5,14 @@ import { hasNativeDetector } from '@/features/scanner/detector'
 import { feedbackSuccess } from '@/ui/feedback'
 import {
   isStoragePersisted,
-  promptInstall,
   requestPersistentStorage,
 } from '@/features/install/install'
-import { useInstall } from '@/features/install/useInstall'
 import { SecurityCard } from '@/features/security/SecurityCard'
 import { ShopCard } from '@/features/shops/ShopCard'
-import { useTheme, type ThemePreference } from '@/ui/theme'
+import { useInstall } from '@/features/install/useInstall'
 import { LicenseCard } from './LicenseCard'
-import { loadShopName, saveShopName } from './shopName'
 import { SyncCard } from './SyncCard'
+import { useTheme, type ThemePreference } from '@/ui/theme'
 
 export function SettingsScreen() {
   const products = useLiveQuery(() => db.products.count(), []) ?? 0
@@ -26,21 +24,17 @@ export function SettingsScreen() {
   const [online, setOnline] = useState(navigator.onLine)
   const [storage, setStorage] = useState('measuring…')
   const [persisted, setPersisted] = useState(false)
-  const { installed, canInstall } = useInstall()
+  const { installed } = useInstall()
   const cameraAvailable = Boolean(navigator.mediaDevices?.getUserMedia)
 
-  const [shopName, setShopName] = useState('')
-  const [shopSaved, setShopSaved] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    void loadShopName().then((n) => setShopName(n))
     const on = () => setOnline(true)
     const off = () => setOnline(false)
     window.addEventListener('online', on)
     window.addEventListener('offline', off)
 
-    // Quota is how much headroom the ledger has before sales start failing.
     void navigator.storage?.estimate?.().then((e) => {
       if (!e.usage || !e.quota) return
       const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
@@ -56,163 +50,106 @@ export function SettingsScreen() {
   }, [])
 
   return (
-    <div className="px-4 py-4">
-      <h1 className="text-xl font-bold">Settings</h1>
-
-      <AppearanceCard />
-
-      <div className="card mt-3">
-        <h2 className="text-sm font-semibold">Device</h2>
-        <dl className="mt-2 space-y-1.5 text-sm">
-          <Row label="Online" value={online ? 'yes' : 'no — working offline'} />
-          <Row
-            label="Camera available"
-            value={cameraAvailable ? 'yes' : 'no — install the app'}
-          />
-          <Row label="Installed as app" value={installed ? 'yes' : 'no'} />
-          <Row label="Camera API" value={hasNativeDetector() ? 'native' : 'wasm fallback'} />
-          <Row label="Build" value={__BUILD_ID__} mono />
-          <Row label="This device id" value={deviceId.slice(0, 8)} mono />
-        </dl>
+    <div className="relative min-h-[calc(100dvh-84px)] overflow-hidden">
+      {/* Background image — Study C Glass Aurora */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src="/backgrounds/glass-aurora.jpg"
+          alt=""
+          className="w-full h-full object-cover"
+          aria-hidden="true"
+        />
+        <div className="absolute inset-0 bg-ice-100/50" />
       </div>
 
-      <SecurityCard />
+      <div className="relative z-10 px-4 py-4">
+        <h1 className="text-xl font-bold text-surface-900">Settings</h1>
 
-      <div className="card mt-3">
-        <h2 className="text-sm font-semibold">Install as an app</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">
-          {installed
-            ? 'Installed. You are running the app from your home screen, and your data is stored on this device.'
-            : 'Add Till to your home screen so it opens full screen, works offline, and keeps its own data.'}
-        </p>
-        {!installed && (
-          <button
-            className="btn-primary mt-3 w-full !py-2.5 text-sm"
-            disabled={!canInstall}
-            onClick={async () => {
-              const outcome = await promptInstall()
-              if (outcome === 'unavailable') {
-                setMessage(
-                  'Your browser did not offer an install prompt — use the Chrome menu → “Add to Home screen”.',
-                )
-              }
-            }}
-          >
-            {canInstall ? 'Install app' : 'Use Chrome menu → Add to Home screen'}
-          </button>
-        )}
-      </div>
+        <AppearanceCard />
 
-      {!cameraAvailable && (
-        <div className="mt-3 rounded-xl bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-200">
-          <strong className="font-semibold">Camera is unavailable here.</strong>{' '}
-          {installed
-            ? 'This browser is withholding the camera from the installed app.'
-            : 'Chrome on Android and Safari on iOS only expose the camera to an app ' +
-              'launched from the home screen. Add to Home Screen and open it from the icon.'}{' '}
-          Desktop browsers allow the camera in an ordinary tab, so this is expected
-          on a phone only.
+        <div className="card mt-3">
+          <h2 className="text-sm font-semibold text-surface-900">Device</h2>
+          <dl className="mt-2 space-y-1.5 text-sm">
+            <Row label="Online" value={online ? 'yes' : 'no — working offline'} />
+            <Row
+              label="Camera available"
+              value={cameraAvailable ? 'yes' : 'no — install the app'}
+            />
+            <Row label="Installed as app" value={installed ? 'yes' : 'no'} />
+            <Row label="Camera API" value={hasNativeDetector() ? 'native' : 'wasm fallback'} />
+            <Row label="Build" value={__BUILD_ID__} mono />
+            <Row label="This device id" value={deviceId.slice(0, 8)} mono />
+          </dl>
         </div>
-      )}
 
-      <div className="card mt-3">
-        <h2 className="text-sm font-semibold">Business</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">
-          Printed on the report headers, so the PDF books carry your shop's name.
-        </p>
-        <div className="mt-2 flex gap-2">
-          <input
-            className="field !py-2.5 text-sm"
-            value={shopName}
-            onChange={(e) => {
-              setShopName(e.target.value)
-              setShopSaved(false)
-            }}
-            placeholder="e.g. Maluti Traders"
-            maxLength={60}
-          />
-          <button
-            className="btn-primary !py-2.5 text-sm"
-            disabled={shopName.trim() === '' || shopSaved}
-            onClick={async () => {
-              await saveShopName(shopName)
-              setShopSaved(true)
-              feedbackSuccess()
-            }}
-          >
-            Save
-          </button>
-        </div>
-        {shopSaved && (
-          <p className="mt-1 text-[11px] text-cash-400">Saved — appears on your next books PDF.</p>
-        )}
-      </div>
+        <SecurityCard />
 
-      <ShopCard />
+        <ShopCard />
 
-      <LicenseCard />
+        <LicenseCard />
 
-      <div className="card mt-3">
-        <h2 className="text-sm font-semibold">Data on this device</h2>
-        <dl className="mt-2 space-y-1.5 text-sm">
-          <Row label="Products" value={String(products)} mono />
-          <Row label="Sales" value={String(sales)} mono />
-          <Row label="Stock movements" value={String(movements)} mono />
-          <Row label="Cash movements" value={String(cash)} mono />
-        </dl>
-        <button
-          className="btn-ghost mt-3 w-full !py-2.5 text-sm"
-          onClick={() => {
-            void repairStockCache()
-            feedbackSuccess()
-            setMessage('Stock balances rebuilt from the ledger')
-          }}
-        >
-          Rebuild stock balances
-        </button>
-      </div>
-
-      <SyncCard />
-
-      <div className="card mt-3">
-        <h2 className="text-sm font-semibold">Storage</h2>
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">
-          Sales and stock movements are never deleted, so the ledger stays
-          auditable. Clearing this site data from your browser would erase
-          everything, so export regularly if the numbers matter.
-        </p>
-        <dl className="mt-2 space-y-1.5 text-sm">
-          <Row
-            label="Protected from clearing"
-            value={persisted ? 'yes' : 'not yet'}
-          />
-        </dl>
-        <p className="mt-2 text-xs text-slate-500">Local use: {storage}</p>
-        {!persisted && (
+        <div className="card mt-3">
+          <h2 className="text-sm font-semibold text-surface-900">Data on this device</h2>
+          <dl className="mt-2 space-y-1.5 text-sm">
+            <Row label="Products" value={String(products)} mono />
+            <Row label="Sales" value={String(sales)} mono />
+            <Row label="Stock movements" value={String(movements)} mono />
+            <Row label="Cash movements" value={String(cash)} mono />
+          </dl>
           <button
             className="btn-ghost mt-3 w-full !py-2.5 text-sm"
-            onClick={async () => {
-              const ok = await requestPersistentStorage()
-              setPersisted(ok)
-              setMessage(
-                ok
-                  ? 'This device will now keep your data instead of clearing it.'
-                  : 'The browser declined. Data still saves, but the phone may clear it under storage pressure.',
-              )
+            onClick={() => {
+              void repairStockCache()
+              feedbackSuccess()
+              setMessage('Stock balances rebuilt from the ledger')
             }}
           >
-            Keep data on this device
+            Rebuild stock balances
           </button>
+        </div>
+
+        <SyncCard />
+
+        <div className="card mt-3">
+          <h2 className="text-sm font-semibold text-surface-900">Storage</h2>
+          <p className="mt-1 text-xs leading-relaxed text-surface-600">
+            Sales and stock movements are never deleted, so the ledger stays
+            auditable. Clearing this site data from your browser would erase
+            everything, so export regularly if the numbers matter.
+          </p>
+          <dl className="mt-2 space-y-1.5 text-sm">
+            <Row
+              label="Protected from clearing"
+              value={persisted ? 'yes' : 'not yet'}
+            />
+          </dl>
+          <p className="mt-2 text-xs text-surface-500">Local use: {storage}</p>
+          {!persisted && (
+            <button
+              className="btn-ghost mt-3 w-full !py-2.5 text-sm"
+              onClick={async () => {
+                const ok = await requestPersistentStorage()
+                setPersisted(ok)
+                setMessage(
+                  ok
+                    ? 'This device will now keep your data instead of clearing it.'
+                    : 'The browser declined. Data still saves, but the phone may clear it under storage pressure.',
+                )
+              }}
+            >
+              Keep data on this device
+            </button>
+          )}
+        </div>
+
+        {message && (
+          <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs text-surface-700">
+            {message}
+          </p>
         )}
+
+        <p className="mt-6 text-center text-[11px] text-surface-500">Till · offline first</p>
       </div>
-
-      {message && (
-        <p className="mt-3 rounded-xl bg-ink-800 px-3 py-2 text-xs text-cash-400">
-          {message}
-        </p>
-      )}
-
-      <p className="mt-6 text-center text-[11px] text-slate-600">Till · offline first</p>
     </div>
   )
 }
@@ -231,19 +168,19 @@ function AppearanceCard() {
     <div className="card mt-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold">Appearance</h2>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">
+          <h2 className="text-sm font-semibold text-surface-900">Appearance</h2>
+          <p className="mt-1 text-xs leading-relaxed text-surface-600">
             {preference === 'system'
               ? `Following this device — currently ${resolved}.`
               : `Always ${preference}.`}{' '}
-            This setting stays on this device.
+              This setting stays on this device.
           </p>
         </div>
         <button
           type="button"
           aria-label={next === 'dark' ? 'Switch to dark mode' : 'Switch to light mode'}
           title={next === 'dark' ? 'Switch to dark mode' : 'Switch to light mode'}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-ink-700 text-slate-200 active:bg-ink-600"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-300 text-surface-900 active:bg-surface-400"
           onClick={() => setPreference(next)}
         >
           {next === 'dark' ? <MoonIcon /> : <SunIcon />}
@@ -258,8 +195,8 @@ function AppearanceCard() {
             aria-pressed={preference === option.id}
             className={`btn !py-2.5 text-sm ${
               preference === option.id
-                ? 'bg-cash-500 text-on-accent'
-                : 'bg-ink-700 text-slate-200 hover:bg-ink-600'
+                ? 'bg-cyan-400 text-white'
+                : 'bg-surface-200 text-surface-900 hover:bg-surface-300'
             }`}
             onClick={() => setPreference(option.id)}
           >
@@ -291,7 +228,7 @@ function MoonIcon() {
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-slate-400">{label}</dt>
+      <dt className="text-surface-600">{label}</dt>
       <dd className={`truncate ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
     </div>
   )

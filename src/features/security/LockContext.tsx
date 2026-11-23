@@ -187,10 +187,10 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
 /** Shown for the few milliseconds the staff read takes. */
 function BootSplash() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-ink-900">
+    <div className="flex min-h-dvh items-center justify-center bg-ice-100">
       <div className="flex flex-col items-center gap-4">
-        <div className="h-12 w-12 animate-pulse rounded-2xl bg-cash-500/80" />
-        <p className="text-xs uppercase tracking-[0.3em] text-slate-600">Till</p>
+        <div className="h-12 w-12 animate-pulse rounded-2xl bg-cyan-400/80" />
+        <p className="text-xs uppercase tracking-[0.3em] text-surface-600">Till</p>
       </div>
     </div>
   )

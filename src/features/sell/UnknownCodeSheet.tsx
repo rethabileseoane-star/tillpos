@@ -38,15 +38,15 @@ export function UnknownCodeSheet({ code, onClose, onSave }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/70" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
-        className="w-full animate-slideUp rounded-t-2xl bg-ink-800 p-4 pb-6"
+        className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300" />
 
-        <h2 className="text-lg font-semibold">New item</h2>
-        <p className="mt-0.5 font-mono text-xs text-slate-400">
+        <h2 className="text-lg font-semibold text-surface-900">New item</h2>
+        <p className="mt-0.5 font-mono text-xs text-surface-600">
           {normalizeBarcode(code)}
         </p>
 
@@ -73,7 +73,7 @@ export function UnknownCodeSheet({ code, onClose, onSave }: Props) {
               placeholder="0.00"
             />
             {parsed !== null && (
-              <p className="mt-1 text-xs text-cash-400">{formatMaluti(parsed)}</p>
+              <p className="mt-1 text-xs text-cyan-600">{formatMaluti(parsed)}</p>
             )}
           </div>
         </div>

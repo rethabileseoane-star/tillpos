@@ -2,13 +2,6 @@ import { useState } from 'react'
 import { loadedShop } from '@/db'
 import { listShops, switchShopNow, type ShopProfile } from '@/shops/registry'
 
-/**
- * The shop picker shown on the lock screen.
- *
- * Switching shops does not require a password: the phone reloads and opens the
- * other shop's own lock screen. The owner's password (or a cashier's PIN) for
- * that shop is still required before any of its data appears.
- */
 export function ShopSwitchSheet({
   onClose,
 }: {
@@ -28,11 +21,11 @@ export function ShopSwitchSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/80 sm:items-center sm:justify-center sm:p-4">
-      <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ink-800 p-4 pb-6 sm:max-w-md sm:rounded-2xl">
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-600 sm:hidden" />
-        <h2 className="text-lg font-semibold">Switch shop</h2>
-        <p className="mt-1 text-sm leading-relaxed text-slate-400">
+    <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4">
+      <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
+        <h2 className="text-lg font-semibold text-surface-900">Switch shop</h2>
+        <p className="mt-1 text-sm leading-relaxed text-surface-600">
           Each shop has its own catalog, sales, cash drawer, staff and app lock.
         </p>
 
@@ -45,23 +38,23 @@ export function ShopSwitchSheet({
                 type="button"
                 disabled={busy !== null}
                 onClick={() => choose(shop)}
-                className={`card flex w-full items-center gap-3 !py-3 text-left active:bg-ink-700 ${
-                  current ? 'border-cash-500/50' : ''
+                className={`card flex w-full items-center gap-3 !py-3 text-left active:bg-surface-200 ${
+                  current ? 'border-cyan-400/50' : ''
                 }`}
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-ink-700 font-semibold text-cash-400">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400/15 font-semibold text-cyan-600">
                   {initials(shop.name)}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{shop.name}</span>
-                  <span className="block font-mono text-[11px] text-slate-500">{shop.id}</span>
+                  <span className="block truncate font-medium text-surface-900">{shop.name}</span>
+                  <span className="block font-mono text-[11px] text-surface-500">{shop.id}</span>
                 </span>
                 {current ? (
-                  <span className="rounded-full bg-cash-500/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-cash-400">
+                  <span className="rounded-full bg-cyan-400/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-600">
                     Current
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-surface-600">
                     {busy === shop.id ? 'Opening…' : 'Open'}
                   </span>
                 )}

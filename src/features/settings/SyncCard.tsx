@@ -10,14 +10,6 @@ import { loadedShop } from '@/db'
 import { useSyncState } from '@/sync/status'
 import { loadTillLabel, saveTillLabel } from './tillLabel'
 
-/**
- * Settings → Cloud sync.
- *
- * Three states, one per stage of setting a device up: enter the project (and
- * the shop's login), sign in, or connected. Everything the shopkeeper needs to
- * answer "is my other till's data here yet, and is it safe" lives on the
- * connected card.
- */
 export function SyncCard() {
   const sync = useSyncState()
   const pending = useLiveQuery(() => outboxCount(), []) ?? 0
@@ -169,8 +161,8 @@ export function SyncCard() {
 
   return (
     <div className="card mt-3">
-      <h2 className="text-sm font-semibold">Cloud sync</h2>
-      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+      <h2 className="text-sm font-semibold text-surface-900">Cloud sync</h2>
+      <p className="mt-1 text-xs leading-relaxed text-surface-600">
         One sync account per shop, shared by up to six devices. Each till keeps
         selling with no network and merges with the others when it is online.
       </p>
@@ -179,7 +171,7 @@ export function SyncCard() {
       </dl>
 
       {configured === null ? (
-        <p className="mt-3 text-xs text-slate-500">Checking…</p>
+        <p className="mt-3 text-xs text-surface-500">Checking…</p>
       ) : !configured ? (
         <>
           <div className="mt-3 space-y-2">
@@ -228,13 +220,13 @@ export function SyncCard() {
               autoCapitalize="characters"
             />
           </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+          <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
             This login must be assigned to shop code{' '}
-            <span className="font-mono text-slate-300">{shop.id}</span> in Supabase
+            <span className="font-mono text-surface-600">{shop.id}</span> in Supabase
             (<span className="font-mono">app_metadata.shop_id</span>). A login for
             another shop is refused.
           </p>
-          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+          <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
             Give every till a different label — it goes in front of the receipt
             numbers (A-0001, B-0001) so two tills never print the same one.
           </p>
@@ -313,7 +305,7 @@ export function SyncCard() {
                 Save
               </button>
             </div>
-            <p className="text-[11px] leading-relaxed text-slate-500">
+            <p className="text-[11px] leading-relaxed text-surface-500">
               Printed in front of this till’s receipt numbers. Give each device a
               different label.
             </p>
@@ -339,7 +331,7 @@ export function SyncCard() {
               Turn off
             </button>
           </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+          <p className="mt-2 text-[11px] leading-relaxed text-surface-500">
             Run “Send all records” once on the till that already has this shop’s
             history, so the other devices can download it.
           </p>
@@ -347,13 +339,13 @@ export function SyncCard() {
       )}
 
       {sync.error && (
-        <p className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs leading-relaxed text-surface-700">
           {sync.error}
         </p>
       )}
 
       {note && (
-        <p className="mt-3 rounded-xl bg-ink-800 px-3 py-2 text-xs text-cash-400">{note}</p>
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs text-surface-700">{note}</p>
       )}
     </div>
   )
@@ -370,7 +362,7 @@ function describeLastSync(at: number | null): string {
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-slate-400">{label}</dt>
+      <dt className="text-surface-600">{label}</dt>
       <dd className={`truncate ${mono ? 'font-mono text-xs' : ''}`}>{value}</dd>
     </div>
   )

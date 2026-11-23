@@ -4,14 +4,6 @@ import type { Session, SupabaseClient } from '@supabase/supabase-js'
 import { copyText, generateLicenseKey, hashLicenseKey, isDeviceCode, normalizeDeviceCode } from '@/licensing/format'
 import { adminSession, adminSignIn, adminSignOut, getAdminClient } from '@/licensing/adminClient'
 
-/**
- * Seller-only licence admin. Not linked from the till: open /#/admin.
- *
- * This screen uses the public anon key plus a Supabase Auth login. The licence
- * tables have RLS policies that only allow members of `license_admins`; the
- * service-role key never reaches this page.
- */
-
 interface LicenseRow {
   id: string
   key_hash: string
@@ -155,7 +147,7 @@ export function LicenseAdminScreen() {
   if (checking) {
     return (
       <AdminShell>
-        <p className="text-sm text-slate-400">Opening licence admin…</p>
+        <p className="text-sm text-surface-600">Opening licence admin…</p>
       </AdminShell>
     )
   }
@@ -171,7 +163,7 @@ export function LicenseAdminScreen() {
   if (adminOk === null) {
     return (
       <AdminShell>
-        <p className="text-sm text-slate-400">Checking admin access…</p>
+        <p className="text-sm text-surface-600">Checking admin access…</p>
       </AdminShell>
     )
   }
@@ -180,8 +172,8 @@ export function LicenseAdminScreen() {
     return (
       <AdminShell>
         <div className="card">
-          <h1 className="text-lg font-semibold">Not an admin</h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-400">
+          <h1 className="text-lg font-semibold text-surface-900">Not an admin</h1>
+          <p className="mt-2 text-sm leading-relaxed text-surface-600">
             This account is signed in, but it is not listed in the licence
             admins table. Ask the database owner to add it.
           </p>
@@ -197,8 +189,8 @@ export function LicenseAdminScreen() {
     <AdminShell>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Licence admin</h1>
-          <p className="mt-1 text-xs text-slate-500">{session.user.email}</p>
+          <h1 className="text-xl font-bold text-surface-900">Licence admin</h1>
+          <p className="mt-1 text-xs text-surface-600">{session.user.email}</p>
         </div>
         <div className="flex items-center gap-2">
           <a className="btn-ghost !px-3 !py-2 text-xs" href="#/">
@@ -219,21 +211,21 @@ export function LicenseAdminScreen() {
       />
 
       {error && (
-        <p className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p>
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
       )}
       {note && (
-        <p className="mt-3 rounded-xl bg-ink-800 px-3 py-2 text-xs text-slate-300">{note}</p>
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs text-surface-700">{note}</p>
       )}
 
       <div className="mt-5 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Licences</h2>
+        <h2 className="text-sm font-semibold text-surface-900">Licences</h2>
         <button className="btn-ghost !px-3 !py-2 text-xs" disabled={loading} onClick={() => void reload()}>
           {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
 
       {licenses.length === 0 && !loading ? (
-        <p className="mt-3 rounded-xl border border-ink-700 bg-ink-800 p-4 text-sm text-slate-400">
+        <p className="mt-3 rounded-xl border border-surface-300 bg-ice-200 p-4 text-sm text-surface-500">
           No licences yet. Create one above.
         </p>
       ) : (
@@ -253,24 +245,24 @@ export function LicenseAdminScreen() {
       )}
 
       <div className="mt-6">
-        <h2 className="text-sm font-semibold">Recent activity</h2>
+        <h2 className="text-sm font-semibold text-surface-900">Recent activity</h2>
         {events.length === 0 ? (
-          <p className="mt-2 text-xs text-slate-500">No licence events yet.</p>
+          <p className="mt-2 text-xs text-surface-500">No licence events yet.</p>
         ) : (
-          <div className="mt-2 overflow-hidden rounded-xl border border-ink-700">
+          <div className="mt-2 overflow-hidden rounded-xl border border-surface-300">
             {events.slice(0, 15).map((event) => (
               <div
                 key={event.id}
-                className="flex items-start justify-between gap-3 border-b border-ink-700/70 bg-ink-800/70 px-3 py-2 text-xs last:border-0"
+                className="flex items-start justify-between gap-3 border-b border-surface-300 bg-surface-200 px-3 py-2 text-xs last:border-0"
               >
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-200">{event.event}</p>
-                  <p className="truncate text-slate-500">
+                  <p className="font-medium text-surface-900">{event.event}</p>
+                  <p className="truncate text-surface-600">
                     {event.device_code ?? '—'} ·{' '}
                     {licenses.find((l) => l.id === event.license_id)?.business_name ?? 'unknown'}
                   </p>
                 </div>
-                <span className="shrink-0 text-slate-500">{relative(event.created_at)}</span>
+                <span className="shrink-0 text-surface-600">{relative(event.created_at)}</span>
               </div>
             ))}
           </div>
@@ -307,8 +299,8 @@ function AdminLogin({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div className="card">
-      <h1 className="text-lg font-semibold">Licence admin</h1>
-      <p className="mt-1 text-sm leading-relaxed text-slate-400">
+      <h1 className="text-lg font-semibold text-surface-900">Licence admin</h1>
+      <p className="mt-1 text-sm leading-relaxed text-surface-600">
         Sign in with the seller’s Supabase admin account. This is separate from
         the shop’s staff password and cloud-sync login.
       </p>
@@ -342,10 +334,10 @@ function AdminLogin({ onSignedIn }: { onSignedIn: () => void }) {
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
       {error && (
-        <p className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p>
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
       )}
       <a
-        className="mt-4 block text-center text-xs text-slate-500 underline decoration-slate-700 underline-offset-2"
+        className="mt-4 block text-center text-xs text-surface-600 underline decoration-surface-600 underline-offset-2"
         href="#/"
       >
         Back to the till
@@ -418,8 +410,8 @@ function CreateLicenseCard({
 
   return (
     <div className="card mt-4">
-      <h2 className="text-sm font-semibold">Create a licence</h2>
-      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+      <h2 className="text-sm font-semibold text-surface-900">Create a licence</h2>
+      <p className="mt-1 text-xs leading-relaxed text-surface-600">
         One key covers one business. Add each phone’s device code before the
         customer can activate it. The key is shown only once.
       </p>
@@ -436,7 +428,7 @@ function CreateLicenseCard({
           onChange={(e) => setCustomer(e.target.value)}
           placeholder="Contact name (optional)"
         />
-        <label className="text-xs text-slate-400">
+        <label className="text-xs text-surface-600">
           Max devices
           <input
             className="field mt-1 !py-2.5 text-sm"
@@ -447,7 +439,7 @@ function CreateLicenseCard({
             onChange={(e) => setMaxDevices(Number(e.target.value) || 1)}
           />
         </label>
-        <label className="text-xs text-slate-400">
+        <label className="text-xs text-surface-600">
           Max shops
           <input
             className="field mt-1 !py-2.5 text-sm"
@@ -458,7 +450,7 @@ function CreateLicenseCard({
             onChange={(e) => setMaxShops(Number(e.target.value) || 1)}
           />
         </label>
-        <label className="text-xs text-slate-400">
+        <label className="text-xs text-surface-600">
           Offline hours
           <input
             className="field mt-1 !py-2.5 text-sm"
@@ -469,7 +461,7 @@ function CreateLicenseCard({
             onChange={(e) => setOfflineHours(Number(e.target.value) || 24)}
           />
         </label>
-        <label className="text-xs text-slate-400">
+        <label className="text-xs text-surface-600">
           Subscription ends
           <input
             className="field mt-1 !py-2.5 text-sm"
@@ -493,7 +485,7 @@ function CreateLicenseCard({
         {busy ? 'Creating…' : 'Create licence and show key'}
       </button>
       {error && (
-        <p className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">{error}</p>
+        <p className="mt-3 rounded-xl bg-surface-300 px-3 py-2 text-xs text-surface-700">{error}</p>
       )}
     </div>
   )
@@ -646,27 +638,27 @@ function LicenseAdminCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">{license.business_name}</h3>
+            <h3 className="truncate text-sm font-semibold text-surface-900">{license.business_name}</h3>
             <span
               className={`chip ${
                 license.status === 'active'
-                  ? 'bg-cash-500/15 text-cash-400'
-                  : 'bg-red-500/15 text-red-300'
+                  ? 'bg-cyan-400/15 text-cyan-600'
+                  : 'bg-surface-700/15 text-surface-700'
               }`}
             >
               {license.status}
             </span>
             {new Date(license.expires_at).getTime() < Date.now() && (
-              <span className="chip bg-amber-500/15 text-amber-300">expired</span>
+              <span className="chip bg-surface-300 text-surface-700">expired</span>
             )}
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">
+          <p className="mt-1 text-[11px] text-surface-600">
             {license.customer_name ? `${license.customer_name} · ` : ''}
             {license.max_devices} device{license.max_devices === 1 ? '' : 's'} ·{' '}
             {license.max_shops} shop{license.max_shops === 1 ? '' : 's'} ·{' '}
             {license.offline_hours}h offline
           </p>
-          <p className="mt-1 text-[11px] text-slate-500">
+          <p className="mt-1 text-[11px] text-surface-600">
             Ends {formatDate(license.expires_at)} · id {license.id.slice(0, 8)}
           </p>
         </div>
@@ -675,7 +667,7 @@ function LicenseAdminCard({
       <div className="mt-3">
         <p className="label">Allowed devices</p>
         {devices.length === 0 ? (
-          <p className="rounded-lg bg-ink-900 px-3 py-2 text-xs text-slate-500">
+          <p className="rounded-lg bg-surface-300 px-3 py-2 text-xs text-surface-600">
             No devices yet. Add the code shown on the phone’s activation screen.
           </p>
         ) : (
@@ -683,11 +675,11 @@ function LicenseAdminCard({
             {devices.map((device) => (
               <div
                 key={device.id}
-                className="flex items-center justify-between gap-2 rounded-lg bg-ink-900 px-3 py-2 text-xs"
+                className="flex items-center justify-between gap-2 rounded-lg bg-surface-300 px-3 py-2 text-xs"
               >
                 <div className="min-w-0">
-                  <p className="font-mono text-slate-200">{device.device_code}</p>
-                  <p className="text-[10px] text-slate-500">
+                  <p className="font-mono text-surface-600">{device.device_code}</p>
+                  <p className="text-[10px] text-surface-500">
                     {device.status === 'revoked'
                       ? 'removed'
                       : device.last_seen_at
@@ -697,7 +689,7 @@ function LicenseAdminCard({
                 </div>
                 {device.status === 'active' && (
                   <button
-                    className="text-[11px] text-red-300 underline decoration-red-900 underline-offset-2"
+                    className="text-[11px] text-surface-700 underline decoration-surface-700 underline-offset-2"
                     disabled={busy}
                     onClick={() => void revokeDevice(device)}
                   >
@@ -723,10 +715,10 @@ function LicenseAdminCard({
         </div>
       </div>
 
-      <div className="mt-3 rounded-xl border border-ink-700/70 p-2">
+      <div className="mt-3 rounded-xl border border-surface-300 p-2">
         <p className="label">Limits</p>
         <div className="grid grid-cols-3 gap-2">
-          <label className="text-[10px] text-slate-500">
+          <label className="text-[10px] text-surface-600">
             Devices
             <input
               className="field mt-1 !py-1.5 text-xs"
@@ -737,7 +729,7 @@ function LicenseAdminCard({
               onChange={(e) => setMaxDevices(Number(e.target.value) || 1)}
             />
           </label>
-          <label className="text-[10px] text-slate-500">
+          <label className="text-[10px] text-surface-600">
             Shops
             <input
               className="field mt-1 !py-1.5 text-xs"
@@ -748,7 +740,7 @@ function LicenseAdminCard({
               onChange={(e) => setMaxShops(Number(e.target.value) || 1)}
             />
           </label>
-          <label className="text-[10px] text-slate-500">
+          <label className="text-[10px] text-surface-600">
             Offline h
             <input
               className="field mt-1 !py-1.5 text-xs"
@@ -797,9 +789,9 @@ function LicenseAdminCard({
         </button>
       </div>
 
-      {license.notes && <p className="mt-2 text-[11px] text-slate-500">{license.notes}</p>}
+      {license.notes && <p className="mt-2 text-[11px] text-surface-600">{license.notes}</p>}
       {error && (
-        <p className="mt-2 rounded-lg bg-red-500/10 px-2 py-1.5 text-[11px] text-red-200">{error}</p>
+        <p className="mt-2 rounded-lg bg-surface-300 px-2 py-1.5 text-[11px] text-surface-700">{error}</p>
       )}
     </div>
   )
@@ -812,13 +804,13 @@ function RevealedKeyModal({ value, onClose }: { value: RevealedKey; onClose: () 
     value.key,
   )}`
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-ink-700 bg-ink-800 p-4">
-        <h2 className="text-lg font-semibold">Licence key for {value.business}</h2>
-        <p className="mt-1 text-xs leading-relaxed text-amber-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-900/40 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-surface-300 bg-ice-200 p-4 shadow-lift">
+        <h2 className="text-lg font-semibold text-surface-900">Licence key for {value.business}</h2>
+        <p className="mt-1 text-xs leading-relaxed text-surface-600">
           Copy this now. It is not stored and cannot be shown again.
         </p>
-        <code className="mt-3 block break-all rounded-xl bg-ink-900 p-3 font-mono text-sm text-cash-300">
+        <code className="mt-3 block break-all rounded-xl bg-surface-300 p-3 font-mono text-sm text-surface-900">
           {value.key}
         </code>
         <button
@@ -839,7 +831,7 @@ function RevealedKeyModal({ value, onClose }: { value: RevealedKey; onClose: () 
         >
           {linkCopied ? 'Activation link copied' : 'Copy quick activation link'}
         </button>
-        <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+        <p className="mt-3 text-[11px] leading-relaxed text-surface-600">
           Give it to the customer only after their device codes are added. The
           quick link pre-fills the key on an approved phone; the customer still
           taps Activate.
@@ -854,7 +846,7 @@ function RevealedKeyModal({ value, onClose }: { value: RevealedKey; onClose: () 
 
 function AdminShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-dvh bg-ink-900 px-4 py-6 text-slate-100">
+    <div className="min-h-dvh bg-ice-100 px-4 py-6 text-surface-900">
       <div className="mx-auto max-w-2xl">{children}</div>
     </div>
   )
