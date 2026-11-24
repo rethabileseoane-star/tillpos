@@ -51,7 +51,7 @@ export function SellScreen() {
   }, [])
 
   return (
-    <div className="relative min-h-[100dvh] flex flex-col overflow-hidden">
+    <div className="relative flex min-h-[100dvh] flex-col">
       {/* Background image — Ice Flow (reference image 1), anchored to bottom half */}
       <div
         className="absolute inset-0 z-0"
@@ -162,7 +162,7 @@ export function SellScreen() {
 
         {/* Sticky checkout bar */}
         {count > 0 && (
-          <div className="sticky bottom-0 z-30 border-t border-surface-300 bg-ice-200/90 px-4 py-3 backdrop-blur">
+          <div className="sticky bottom-24 z-30 border-t border-surface-300 bg-ice-200/90 px-4 py-3 backdrop-blur">
             <div className="mb-2 flex items-baseline justify-between">
               <span className="text-xs uppercase tracking-wider text-surface-600">Total</span>
               <span className="font-mono text-2xl font-bold text-cyan-600">
