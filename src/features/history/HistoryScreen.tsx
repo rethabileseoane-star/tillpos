@@ -8,6 +8,7 @@ import { useAppLock } from '@/features/security/LockContext'
 import { saleCashierName } from '@/features/security/staff'
 import { downloadBlob } from '@/features/catalog/csvImport'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
+import { Portal } from '@/ui/Portal'
 import {
   recordCreditPayment,
   writeOffCreditSale,
@@ -579,6 +580,7 @@ function CreditBookSheet({
   onWriteOff: (row: CreditRow) => void
 }) {
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="max-h-[88vh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
@@ -650,6 +652,7 @@ function CreditBookSheet({
         </ul>
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -685,6 +688,7 @@ function CreditPaymentSheet({ row, onClose }: { row: CreditRow; onClose: () => v
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[60] flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
@@ -746,6 +750,7 @@ function CreditPaymentSheet({ row, onClose }: { row: CreditRow; onClose: () => v
         </div>
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -775,6 +780,7 @@ function WriteOffSheet({ row, onClose }: { row: CreditRow; onClose: () => void }
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[60] flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="w-full animate-slideUp rounded-t-2xl bg-ice-200 p-4 pb-6 shadow-lift"
@@ -821,5 +827,6 @@ function WriteOffSheet({ row, onClose }: { row: CreditRow; onClose: () => void }
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

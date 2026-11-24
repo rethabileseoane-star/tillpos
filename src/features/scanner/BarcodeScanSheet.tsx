@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useBarcodeScanner } from './useBarcodeScanner'
 import { ManualEntry } from './ManualEntry'
 import { RETAIL_FORMATS } from '@/domain/barcode'
+import { Portal } from '@/ui/Portal'
 
 interface Props {
   title: string
@@ -27,6 +28,7 @@ export function BarcodeScanSheet({ title, onDetected, onClose }: Props) {
   const scanning = scanner.status === 'scanning' || scanner.status === 'starting'
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[60] flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="w-full animate-slideUp rounded-t-2xl bg-ice-200 pb-5 shadow-lift"
@@ -135,5 +137,6 @@ export function BarcodeScanSheet({ title, onDetected, onClose }: Props) {
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

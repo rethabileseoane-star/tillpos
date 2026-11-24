@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
+import { Portal } from '@/ui/Portal'
 import {
   biometricSupportNote,
   biometricsSupported,
@@ -943,6 +944,7 @@ function Sheet({
   children: ReactNode
 }) {
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-surface-900/40 sm:items-center sm:p-4"
       onClick={onClose}
@@ -970,5 +972,6 @@ function Sheet({
         {children}
       </div>
     </div>
+    </Portal>
   )
 }

@@ -10,6 +10,7 @@ import { queueEntity } from '@/sync/outbox'
 import { downloadBlob, importProducts, type ImportResult } from './csvImport'
 import { ProductEditor } from './ProductEditor'
 import { feedbackError } from '@/ui/feedback'
+import { Portal } from '@/ui/Portal'
 
 export function CatalogScreen() {
   const { isOwner } = useAppLock()
@@ -429,7 +430,8 @@ export function CatalogScreen() {
         )}
 
         {!readOnly && deleteConfirm && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-surface-900/40" onClick={() => setDeleteConfirm(null)}>
+          <Portal>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface-900/40" onClick={() => setDeleteConfirm(null)}>
             <div
               className="w-full max-w-md rounded-2xl bg-ice-200 p-5 border border-surface-300 shadow-lift"
               onClick={(e) => e.stopPropagation()}
@@ -456,6 +458,7 @@ export function CatalogScreen() {
               </div>
             </div>
           </div>
+          </Portal>
         )}
       </div>
     </div>

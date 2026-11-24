@@ -7,6 +7,7 @@ import { localTime } from '@/domain/time'
 import { useAppLock } from '@/features/security/LockContext'
 import { saleCashierName } from '@/features/security/staff'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
+import { Portal } from '@/ui/Portal'
 import {
   TAB_KIND_CHIP,
   TAB_KIND_LABEL,
@@ -190,6 +191,7 @@ function TabDetailSheet({
 }) {
   const sorted = [...entries].sort((a, b) => b.createdAt - a.createdAt)
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
@@ -270,6 +272,7 @@ function TabDetailSheet({
         )}
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -492,6 +495,7 @@ function SheetShell({
   children: ReactNode
 }) {
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
@@ -509,6 +513,7 @@ function SheetShell({
         {children}
       </div>
     </div>
+    </Portal>
   )
 }
 

@@ -8,6 +8,7 @@ import { useAppLock } from '@/features/security/LockContext'
 import { saleCashierName } from '@/features/security/staff'
 import { feedbackSuccess } from '@/ui/feedback'
 import { tabBalanceMap } from '@/features/tabs/tabs'
+import { Portal } from '@/ui/Portal'
 import type { CustomerTab, PaymentMethod, Sale, TabEntry } from '@/db/types'
 
 interface Props {
@@ -153,6 +154,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
     : 'customer tab'
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 flex items-end bg-surface-900/40"
       onClick={stage === 'done' ? onComplete : onClose}
@@ -506,6 +508,7 @@ export function CheckoutSheet({ open, total, onClose, onComplete }: Props) {
         />
       )}
     </div>
+    </Portal>
   )
 }
 

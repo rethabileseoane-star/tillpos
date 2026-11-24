@@ -5,6 +5,7 @@ import { formatMaluti, parseAmount } from '@/domain/money'
 import { isValidBarcode, normalizeBarcode } from '@/domain/barcode'
 import { queueEntity } from '@/sync/outbox'
 import { BarcodeScanSheet } from '@/features/scanner/BarcodeScanSheet'
+import { Portal } from '@/ui/Portal'
 
 interface Props {
   product: Product | null
@@ -170,6 +171,7 @@ export function ProductEditor({ product, onClose }: Props) {
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
@@ -379,5 +381,6 @@ export function ProductEditor({ product, onClose }: Props) {
         />
       )}
     </div>
+    </Portal>
   )
 }

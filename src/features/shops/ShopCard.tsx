@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadedShop } from '@/db'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
+import { Portal } from '@/ui/Portal'
 import { useLicense } from '@/licensing/LicenseContext'
 import {
   listShops,
@@ -154,6 +155,7 @@ function AddShopSheet({
   }
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-surface-900/40 sm:items-center sm:p-4"
       onClick={onClose}
@@ -249,5 +251,6 @@ function AddShopSheet({
         )}
       </div>
     </div>
+    </Portal>
   )
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { parseAmount, formatMaluti } from '@/domain/money'
 import { normalizeBarcode } from '@/domain/barcode'
+import { Portal } from '@/ui/Portal'
 import type { Cents } from '@/domain/money'
 
 interface Props {
@@ -38,6 +39,7 @@ export function UnknownCodeSheet({ code, onClose, onSave }: Props) {
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
@@ -100,5 +102,6 @@ export function UnknownCodeSheet({ code, onClose, onSave }: Props) {
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

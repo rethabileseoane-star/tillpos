@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { loadedShop } from '@/db'
 import { listShops, switchShopNow, type ShopProfile } from '@/shops/registry'
+import { Portal } from '@/ui/Portal'
 
 export function ShopSwitchSheet({
   onClose,
@@ -21,6 +22,7 @@ export function ShopSwitchSheet({
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40 sm:items-center sm:justify-center sm:p-4">
       <div className="max-h-[92dvh] w-full animate-slideUp overflow-y-auto rounded-t-2xl bg-ice-200 p-4 pb-6 sm:max-w-md sm:rounded-2xl shadow-lift">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-300 sm:hidden" />
@@ -68,6 +70,7 @@ export function ShopSwitchSheet({
         </button>
       </div>
     </div>
+    </Portal>
   )
 }
 

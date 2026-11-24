@@ -15,6 +15,7 @@ import {
 } from '@/features/cash/cashService'
 import { feedbackSuccess } from '@/ui/feedback'
 import { BarcodeScanSheet } from '@/features/scanner/BarcodeScanSheet'
+import { Portal } from '@/ui/Portal'
 import { totalTabBalance } from '@/features/tabs/tabs'
 
 const MOVEMENT_LABEL: Record<CashReason, string> = {
@@ -341,6 +342,7 @@ function QuickAmountSheet({
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
@@ -434,6 +436,7 @@ function QuickAmountSheet({
         </div>
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -539,6 +542,7 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
     .filter((p): p is Product => Boolean(p))
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 flex items-end bg-surface-900/40" onClick={onClose}>
       <div
         className="flex max-h-[92dvh] w-full animate-slideUp flex-col rounded-t-2xl bg-ice-200 shadow-lift"
@@ -682,6 +686,7 @@ function BuyStockSheet({ products, onClose }: { products: Product[]; onClose: ()
         />
       )}
     </div>
+    </Portal>
   )
 }
 
