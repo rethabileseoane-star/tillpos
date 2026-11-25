@@ -64,6 +64,58 @@
 }
 
 @layer components {
+  /* Full-bleed screen backdrops. WebP is ~60% smaller than the source JPEG;
+     the plain url() line above each image-set() keeps older browsers working. */
+  .screen-bg {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .screen-bg--bottom {
+    background-position: bottom center;
+  }
+  .bg-ice-flow {
+    background-image: url('/backgrounds/ice-flow.jpg');
+    background-image: image-set(
+      url('/backgrounds/ice-flow.webp') type('image/webp'),
+      url('/backgrounds/ice-flow.jpg') type('image/jpeg')
+    );
+  }
+  .bg-glass-aurora {
+    background-image: url('/backgrounds/glass-aurora.jpg');
+    background-image: image-set(
+      url('/backgrounds/glass-aurora.webp') type('image/webp'),
+      url('/backgrounds/glass-aurora.jpg') type('image/jpeg')
+    );
+  }
+  .bg-crystal-waves {
+    background-image: url('/backgrounds/crystal-waves.jpg');
+    background-image: image-set(
+      url('/backgrounds/crystal-waves.webp') type('image/webp'),
+      url('/backgrounds/crystal-waves.jpg') type('image/jpeg')
+    );
+  }
+  .bg-liquid-chrome {
+    background-image: url('/backgrounds/liquid-chrome.jpg');
+    background-image: image-set(
+      url('/backgrounds/liquid-chrome.webp') type('image/webp'),
+      url('/backgrounds/liquid-chrome.jpg') type('image/jpeg')
+    );
+  }
+  .bg-ref-3 {
+    background-image: url('/backgrounds/ref-3.jpg');
+    background-image: image-set(
+      url('/backgrounds/ref-3.webp') type('image/webp'),
+      url('/backgrounds/ref-3.jpg') type('image/jpeg')
+    );
+  }
+  .bg-ref-4 {
+    background-image: url('/backgrounds/ref-4.jpg');
+    background-image: image-set(
+      url('/backgrounds/ref-4.webp') type('image/webp'),
+      url('/backgrounds/ref-4.jpg') type('image/jpeg')
+    );
+  }
   .btn {
     @apply flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-surface-900 font-medium
            transition shadow-soft active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100

@@ -79,7 +79,10 @@ export default defineConfig({
         // Everything is precached so the app boots with no network at all.
         // wasm must be included or the Safari/Firefox barcode decoder will try
         // to fetch it at runtime and fail with the radio off.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,wasm}'],
+        // The screen backdrops live in public/backgrounds as JPEGs. Without
+        // jpg in the glob the service worker precaches the whole app except
+        // the pictures, so an installed till loses every background offline.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2,wasm,jpg,jpeg,webp}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
@@ -89,8 +92,10 @@ export default defineConfig({
         name: 'Till',
         short_name: 'Till',
         description: 'Offline barcode point-of-sale and cash reconciliation',
-        theme_color: '#0b1120',
-        background_color: '#0b1120',
+        // Match the light ice shell in index.html. A dark manifest colour
+        // makes the standalone splash flash navy before the app paints.
+        theme_color: '#f7fcff',
+        background_color: '#f7fcff',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',

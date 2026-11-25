@@ -15,6 +15,9 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-startup-image" href="/splash.png" />
+    <!-- Sell is the landing screen. Start its backdrop with the HTML parser
+         instead of waiting for React to mount and set a CSS background-image. -->
+    <link rel="preload" as="image" href="/backgrounds/ice-flow.webp" type="image/webp" />
     <title>Till</title>
   </head>
   <body>

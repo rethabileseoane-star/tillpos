@@ -53,15 +53,7 @@ export function SellScreen() {
   return (
     <div className="relative flex min-h-[100dvh] flex-col">
       {/* Background image — Ice Flow (reference image 1), anchored to bottom half */}
-      <div
-        className="absolute inset-0 z-0"
-        style={{
-          backgroundImage: 'url("/backgrounds/ice-flow.jpg")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'bottom center',
-          backgroundRepeat: 'no-repeat',
-        }}
-      />
+      <div className="absolute inset-0 z-0 screen-bg screen-bg--bottom bg-ice-flow" />
 
       <div className="relative z-10 flex h-full flex-col">
         {/* Viewport: the live camera feed fills this box. Background image shows through behind it. */}

@@ -42,12 +42,14 @@ export function readThemePreference(): ThemePreference {
     const stored = localStorage.getItem(STORAGE_KEY)
     return isThemePreference(stored) ? stored : 'light'
   } catch {
-    return 'dark'
+    // Keep this in step with public/theme-init.js: when storage is blocked
+    // (private mode, locked-down browser) the light shell must stay light.
+    return 'light'
   }
 }
 
 function systemPrefersDark(): boolean {
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
 }
 
 function applyTheme(theme: ResolvedTheme): void {

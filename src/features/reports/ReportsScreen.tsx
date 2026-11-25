@@ -94,15 +94,7 @@ export function ReportsScreen() {
   return (
     <div className="relative min-h-[calc(100dvh-84px)] overflow-hidden">
       {/* Background image — Reference Image 6 */}
-      <div
-        className="absolute inset-0 z-0 bg-ice-100"
-        style={{
-          backgroundImage: 'url("/backgrounds/liquid-chrome.jpg")',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }}
-      >
+      <div className="absolute inset-0 z-0 bg-ice-100 screen-bg bg-liquid-chrome">
         <div className="absolute inset-0 bg-ice-100/55" />
       </div>
 
