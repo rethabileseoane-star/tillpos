@@ -341,6 +341,10 @@ export async function uploadEverything(): Promise<{
   if (auth.error) return { ok: false, pushed: 0, error: auth.error }
 
   setSyncState({ running: true, phase: 'pushing', error: null })
+  // A full upload can take many requests. Snapshot the queue first: a sale
+  // made during the upload is not in the rows read below, so the clear at the
+  // end must not erase the outbox row that will send it later.
+  const queuedAtStart = await db.outbox.toArray()
   let pushed = 0
   try {
     for (const entity of SYNC_ENTITIES) {
@@ -356,10 +360,23 @@ export async function uploadEverything(): Promise<{
         pushed += slice.length
       }
     }
-    // Everything local is now on the server, so the queue has nothing left to
-    // add and re-sending it would only burn bandwidth.
-    await db.outbox.clear()
-    setSyncState({ running: false, phase: 'idle', pending: 0, pushed })
+    // Drop only the rows that were actually sent, and only if they were not
+    // edited again while the upload was running. Anything added or changed
+    // after the snapshot stays queued for the next normal sync.
+    const stillQueued = await db.outbox.toArray()
+    const sentIds = stillQueued
+      .filter((item) => {
+        const before = queuedAtStart.find((queued) => queued.id === item.id)
+        return (
+          before !== undefined &&
+          before.payload === item.payload &&
+          before.createdAt === item.createdAt
+        )
+      })
+      .map((item) => item.id!)
+    await db.outbox.bulkDelete(sentIds)
+    const pending = await db.outbox.count()
+    setSyncState({ running: false, phase: 'idle', pending, pushed })
     return { ok: true, pushed }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

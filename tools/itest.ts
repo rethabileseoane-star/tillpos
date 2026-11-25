@@ -2010,6 +2010,47 @@ async function main() {
     assert.equal((await db.products.get('p2'))!.name, 'Newer')
   })
 
+  await check('stock movements never stamp the product row with a new edit time', async () => {
+    await reset()
+    const local = stripServerFields(
+      remoteProduct({
+        id: 'p-stock',
+        name: 'Local',
+        updatedAt: 5000,
+        rev: 1,
+        stockQty: 10,
+        barcode: '6000000000001',
+        barcodes: ['6000000000001'],
+      }),
+    ) as unknown as Product
+    await db.products.put(local)
+
+    await adjustStock('p-stock', 12, 'correction')
+    await buyStock([{ productId: 'p-stock', qty: 3 }], 300)
+
+    const cached = (await db.products.get('p-stock'))!
+    assert.equal(cached.stockQty, 15)
+    assert.equal(cached.updatedAt, 5000, 'a stock cache write poisoned the merge timestamp')
+    assert.equal(cached.rev, 1, 'a stock cache write bumped the product revision')
+
+    // A real catalog edit from another till, made after the local product edit
+    // but before these stock movements, must still win the merge.
+    const applied = await applyRemoteRow(
+      'products',
+      remoteProduct({
+        id: 'p-stock',
+        name: 'Renamed on till B',
+        updatedAt: 6000,
+        rev: 2,
+        stockQty: 15,
+        barcode: '6000000000001',
+        barcodes: ['6000000000001'],
+      }),
+    )
+    assert.equal(applied, true, 'a stock movement made a stale remote edit lose')
+    assert.equal((await db.products.get('p-stock'))!.name, 'Renamed on till B')
+  })
+
   await check('an unsynced local edit is never overwritten by a pull', async () => {
     await reset()
     await db.products.put(remoteProduct({ id: 'p3', name: 'Mine', updatedAt: 1000 }) as unknown as Product)

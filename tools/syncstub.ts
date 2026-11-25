@@ -28,7 +28,7 @@ import type { Product, Sale, SaleLine, StockMovement } from '../src/db/types'
 import { queueEntity } from '../src/sync/outbox'
 import { saveSyncConfig } from '../src/sync/config'
 import { getClient, forgetClient, signIn } from '../src/sync/client'
-import { syncNow } from '../src/sync/engine'
+import { syncNow, uploadEverything } from '../src/sync/engine'
 
 let passed = 0
 let failed = 0
@@ -62,6 +62,8 @@ const writeOrder: string[] = []
 /** Every query string the app asked for, to check the pull really filters. */
 const queries: string[] = []
 let sequence = 0
+/** Test hook: mutate local data in the middle of an upload. */
+let beforeUpsert: ((name: string) => Promise<void> | void) | undefined
 
 function tableOf(name: string): Map<string, StoredRow> {
   let t = tables.get(name)
@@ -180,6 +182,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST') {
     const body = await readBody(req)
+    if (beforeUpsert) await beforeUpsert(name)
     const rows = (Array.isArray(body) ? body : [body]) as Record<string, unknown>[]
     for (const row of rows) {
       if (!row || typeof row !== 'object') continue
@@ -536,6 +539,58 @@ async function main() {
     const outcome = await syncNow()
     assert.equal(outcome.ok, true, outcome.error)
     assert.equal(tableOf('products').size, productCount, 'an upsert created a duplicate row')
+  })
+
+  await check('a full upload keeps rows queued while it is running', async () => {
+    await db.transaction('rw', db.products, db.outbox, async () => {
+      await db.products.clear()
+      await db.outbox.clear()
+    })
+    const first = withSyncMeta(undefined, {
+      barcode: '6000000000101',
+      barcodes: ['6000000000101'],
+      name: 'Upload first',
+      price: 100,
+      cost: 50,
+      stockQty: 0,
+      lowStockThreshold: 0,
+      category: 'Grocery',
+      active: true,
+    }) as Product
+    await db.products.put(first)
+    await queueEntity('products', first.id, 'upsert', first)
+
+    let hooked = false
+    let lateId = ''
+    beforeUpsert = async (name) => {
+      if (name !== 'products' || hooked) return
+      hooked = true
+      const late = withSyncMeta(undefined, {
+        barcode: '6000000000102',
+        barcodes: ['6000000000102'],
+        name: 'Queued mid-upload',
+        price: 200,
+        cost: 100,
+        stockQty: 0,
+        lowStockThreshold: 0,
+        category: 'Grocery',
+        active: true,
+      }) as Product
+      await db.products.put(late)
+      await queueEntity('products', late.id, 'upsert', late)
+      lateId = late.id
+    }
+
+    try {
+      const outcome = await uploadEverything()
+      assert.equal(outcome.ok, true, outcome.error)
+      assert.equal(hooked, true, 'the stub never saw a product upsert')
+      const pending = await db.outbox.toArray()
+      assert.equal(pending.length, 1, `expected only the mid-upload row to stay queued, got ${pending.length}`)
+      assert.equal(pending[0]!.entityId, lateId)
+    } finally {
+      beforeUpsert = undefined
+    }
   })
 
   console.log(`\n${passed} passed, ${failed} failed`)

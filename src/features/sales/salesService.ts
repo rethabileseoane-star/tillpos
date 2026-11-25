@@ -370,9 +370,11 @@ export async function voidSale(saleId: string, reason = ''): Promise<void> {
         // original.delta is negative, so subtracting it gives the stock back.
         const product = await db.products.get(original.productId)
         if (product) {
+          // Cache only. A void queues its reversing movement but does not edit
+          // the product, so its LWW timestamp must stay untouched — otherwise
+          // a newer catalog change from another till is rejected forever.
           await db.products.update(original.productId, {
             stockQty: product.stockQty - original.delta,
-            updatedAt: Date.now(),
           })
         }
       }
@@ -480,7 +482,9 @@ export async function adjustStock(
   await db.transaction('rw', db.products, db.stockMovements, db.outbox, async () => {
     await db.stockMovements.put(movement)
     await queueEntity('stock_movements', movement.id, 'upsert', movement)
-    await db.products.update(productId, { stockQty: newQty, updatedAt: Date.now() })
+    // The movement is the edit; the cached balance is not. Keep updatedAt and
+    // rev unchanged so other tills' catalog edits still win a merge.
+    await db.products.update(productId, { stockQty: newQty })
   })
 }
 

@@ -146,9 +146,11 @@ export async function buyStock(items: PurchaseItem[], amountPaid: Cents, note = 
       }) as StockMovement
       await db.stockMovements.put(movement)
       await queueEntity('stock_movements', movement.id, 'upsert', movement)
+      // stockQty is a cache derived from the movement ledger. Never stamp it
+      // with a new updatedAt here: the product row is not an edit, and a fresh
+      // timestamp would beat a real price/name edit made on another till.
       await db.products.update(productId, {
         stockQty: (product.stockQty ?? 0) + qty,
-        updatedAt: Date.now(),
       })
     }
   })
