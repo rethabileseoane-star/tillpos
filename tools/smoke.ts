@@ -43,6 +43,7 @@ import type {
   TabEntryKind,
 } from '../src/db/types'
 import { ACCOUNTS, balanceSheet, cashFlow, incomeStatement, outstandingReceivables, trialBalances } from '../src/features/reports/accounts'
+import { buildJournal, journalBalances, journalDifference, validateJournal } from '../src/features/ledger/journal'
 import {
   buildTabRows,
   cleanTabName,
@@ -518,6 +519,78 @@ check('the same ledger posts a trial balance that ties', () => {
   assert.equal(by.get(ACCOUNTS.CAPITAL), -fromMaluti(15000))
   assert.equal(by.get(ACCOUNTS.CONTRIBUTED), -fromMaluti(128000))
   assert.equal(by.get(ACCOUNTS.SALES), -fromMaluti(19000))
+})
+
+check('the journal posts one balanced entry per event and feeds the trial balance', () => {
+  const cash = [
+    mkCash('float', fromMaluti(10000)),
+    mkCash('sale', fromMaluti(1500), '2026-10-12', { id: 'sale-j1', refId: 'J0001' }),
+  ]
+  const stock = [mkStock('s1', 10, 'opening'), mkStock('s1', -1, 'sale')]
+  const sales = [mkSale(fromMaluti(1500), 'J0001')]
+  const lines = [mkLine('J0001', 's1', fromMaluti(1500), 1)]
+
+  const journal = buildJournal({ sales, lines, cash, products: [P.sugar], stockMoves: stock })
+  assert.deepEqual(validateJournal(journal), [], 'every entry balances on its own')
+  assert.equal(journalDifference(journal.entries), 0)
+
+  const by = journalBalances(journal.entries)
+  assert.equal(by.get(ACCOUNTS.CASH), fromMaluti(11500))
+  assert.equal(by.get(ACCOUNTS.INVENTORY), fromMaluti(12600))
+  assert.equal(by.get(ACCOUNTS.CONTRIBUTED), -fromMaluti(14000))
+  assert.equal(by.get(ACCOUNTS.SALES), -fromMaluti(1500))
+  assert.equal(by.get(ACCOUNTS.COGS), fromMaluti(1400))
+
+  const tb = trialBalances(sales, lines, cash, [P.sugar], stock)
+  const tbBy = new Map(tb.rows.map((row) => [row.account, row.balance]))
+  for (const [account, balance] of by) assert.equal(tbBy.get(account), balance)
+})
+
+check('a credit sale, payment and tab each post balanced legs', () => {
+  const sale = mkSale(fromMaluti(10000), 'J0002', 'completed', {
+    paymentMethod: 'credit',
+    amountTendered: null,
+    change: null,
+  })
+  const payment = mkCash('credit_payment', fromMaluti(4000), '2026-10-12', {
+    id: 'pay-j2',
+    refId: 'J0002',
+  })
+  const tabEntry = mkTabEntry('tab-j2', 'tab-1', 'credit', fromMaluti(2000), {
+    cashMovementId: 'tab-cash-j2',
+  })
+  const tabCash = mkCash('tab_credit', fromMaluti(2000), '2026-10-12', {
+    id: 'tab-cash-j2',
+    refId: 'tab-j2',
+  })
+
+  const journal = buildJournal({
+    sales: [sale],
+    lines: [],
+    cash: [payment, tabCash],
+    products: [],
+    stockMoves: [],
+    tabEntries: [tabEntry],
+  })
+  assert.deepEqual(validateJournal(journal), [])
+  const by = journalBalances(journal.entries)
+  assert.equal(by.get(ACCOUNTS.RECEIVABLES), fromMaluti(6000))
+  assert.equal(by.get(ACCOUNTS.CASH), fromMaluti(6000))
+  assert.equal(by.get(ACCOUNTS.CUSTOMER_CREDITS), -fromMaluti(2000))
+})
+
+check('an orphan cash movement is reported instead of hidden in the difference', () => {
+  const journal = buildJournal({
+    sales: [],
+    lines: [],
+    cash: [mkCash('sale', fromMaluti(500))],
+    products: [],
+    stockMoves: [],
+  })
+  const errors = validateJournal(journal)
+  assert.ok(errors.some((error) => error.code === 'orphan-sale-cash'))
+  assert.ok(errors.some((error) => error.code === 'unbalanced-entry'))
+  assert.equal(journalDifference(journal.entries), fromMaluti(500))
 })
 
 check('a depot bargain is recognised as a gain, so the books balance', () => {

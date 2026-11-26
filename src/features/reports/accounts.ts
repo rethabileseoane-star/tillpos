@@ -9,13 +9,11 @@ import type {
   TabEntry,
 } from '@/db/types'
 import type { Cents } from '@/domain/money'
-import {
-  creditPaidMap,
-  customerCreditTotals,
-  effectiveWriteOffAmount,
-  outstandingCredit,
-  writeOffDate,
-} from '@/features/credit/credit'
+import { outstandingCredit } from '@/features/credit/credit'
+import { ACCOUNT_NAMES, ACCOUNTS } from '@/features/ledger/chart'
+import { buildJournal, journalBalances } from '@/features/ledger/journal'
+
+export { ACCOUNT_NAMES, ACCOUNTS } from '@/features/ledger/chart'
 
 /**
  * The till's books engine — pure accounting maths with a chart of accounts and
@@ -64,46 +62,9 @@ export const STOCK_REASON_LABEL: Record<StockReason, string> = {
   purchase: 'Bought stock',
 }
 
-/** Chart of accounts. Debits are positive, credits negative. */
-export const ACCOUNTS = {
-  CASH: 1100,
-  INVENTORY: 1200,
-  RECEIVABLES: 1300,
-  CUSTOMER_CREDITS: 2400,
-  LOANS: 2500,
-  CAPITAL: 3100,
-  CONTRIBUTED: 3110,
-  DRAWINGS: 3200,
-  SALES: 4100,
-  RETURNS: 4200,
-  COGS: 5100,
-  EXPENSES: 6000,
-  BAD_DEBTS: 6100,
-  PURCHASE_VARIANCE: 7210,
-  STOCK_ADJUST: 7300,
-} as const
-
-export const ACCOUNT_NAMES: Record<number, string> = {
-  [ACCOUNTS.CASH]: 'Cash in drawer',
-  [ACCOUNTS.INVENTORY]: 'Stock in the shop',
-  [ACCOUNTS.RECEIVABLES]: 'Customers who owe (credit)',
-  [ACCOUNTS.CUSTOMER_CREDITS]: 'Customer credits and tabs (cash held for customers)',
-  [ACCOUNTS.LOANS]: 'Loans owed',
-  [ACCOUNTS.CAPITAL]: 'Owner capital (cash put in)',
-  [ACCOUNTS.CONTRIBUTED]: 'Stock brought in',
-  [ACCOUNTS.DRAWINGS]: 'Owner drawings',
-  [ACCOUNTS.SALES]: 'Sales revenue',
-  [ACCOUNTS.RETURNS]: 'Sales returns (voids)',
-  [ACCOUNTS.COGS]: 'Cost of goods sold',
-  [ACCOUNTS.EXPENSES]: 'Expenses paid',
-  [ACCOUNTS.BAD_DEBTS]: 'Bad debts written off',
-  [ACCOUNTS.PURCHASE_VARIANCE]: 'Purchase variance',
-  [ACCOUNTS.STOCK_ADJUST]: 'Stock adjustments',
-}
-
-function costOf(products: Map<string, Product>, id: string, fallback: Cents): Cents {
-  const p = products.get(id)
-  return p ? (p.cost ?? p.price) : fallback
+/** Keep a zero a plain 0, never the -0 that a negated balance can produce. */
+function normalize(value: Cents): Cents {
+  return value === 0 ? 0 : value
 }
 
 /** Two-decimal Maluti with thousands separators and a plain minus sign. */
@@ -122,11 +83,10 @@ export interface TrialBalanceRow {
 }
 
 /**
- * Account balances from posting every event to the chart of accounts. Each
- * event posts balanced legs, so `difference` (the sum of all balances) is zero
- * whenever the ledger is complete. A non-zero difference is unposted movement —
- * almost always a cost revaluation made straight on a product, since cost edits
- * are recorded on the product but never as an entry.
+ * Account balances from the posting journal. Every event posts balanced legs,
+ * so `difference` (the sum of all balances) is zero whenever every event is
+ * linked. A non-zero difference is an orphan movement — for example a cash row
+ * whose sale or tab entry is not on this device yet.
  */
 export function trialBalances(
   sales: Sale[],
@@ -136,178 +96,12 @@ export function trialBalances(
   stockMoves: StockMovement[],
   tabEntries: readonly TabEntry[] = [],
 ): { rows: TrialBalanceRow[]; difference: Cents } {
-  const byId = new Map(products.map((p) => [p.id, p]))
-  const saleById = new Map(sales.map((s) => [s.id, s]))
-  const b = new Map<number, Cents>()
-  const add = (acc: number, v: Cents) => b.set(acc, (b.get(acc) ?? 0) + v)
-
-  for (const m of cash) {
-    switch (m.reason) {
-      case 'sale':
-      case 'void':
-      case 'tab_credit':
-      case 'tab_payout':
-        // The cash leg only. Revenue and returns are posted from the sale row
-        // below; the other side of a tab movement is posted from the tab entry.
-        add(ACCOUNTS.CASH, m.delta)
-        break
-      case 'credit_payment':
-        // Collecting a debt: cash in, receivable down. Never revenue again.
-        add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.RECEIVABLES, -m.delta)
-        break
-      case 'float':
-        add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.CAPITAL, -m.delta)
-        break
-      case 'cash_in':
-        add(ACCOUNTS.CASH, m.delta)
-        add(m.kind === 'loan' ? ACCOUNTS.LOANS : ACCOUNTS.CAPITAL, -m.delta)
-        break
-      case 'purchase':
-        add(ACCOUNTS.CASH, m.delta)
-        break
-      case 'drawing':
-        add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.DRAWINGS, -m.delta)
-        break
-      case 'expense':
-        add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.EXPENSES, -m.delta)
-        break
-      case 'loan_repay':
-        add(ACCOUNTS.CASH, m.delta)
-        add(ACCOUNTS.LOANS, -m.delta)
-        break
-    }
-  }
-
-  // Customer tabs are the mirror of credit: positive entries are money the shop
-  // owes the customer, negative entries reduce that liability when the tab pays
-  // for goods or is handed back as cash. The cash leg, when there is one, was
-  // posted above from its own movement.
-  for (const entry of tabEntries) {
-    add(ACCOUNTS.CUSTOMER_CREDITS, -entry.amount)
-  }
-
-  // Credit payments collected so far, per sale. The sale row owns revenue and
-  // the receivable; the cash movement only moves cash against that receivable.
-  const collected = new Map<string, Cents>()
-  for (const m of cash) {
-    if (m.reason !== 'credit_payment' || !m.refId) continue
-    collected.set(m.refId, (collected.get(m.refId) ?? 0) + m.delta)
-  }
-
-  // Refunds already handed back on a sale. Void movements are negative, so a
-  // positive map value is money returned to the customer.
-  const refunded = new Map<string, Cents>()
-  for (const m of cash) {
-    if (m.reason !== 'void' || !m.refId) continue
-    refunded.set(m.refId, (refunded.get(m.refId) ?? 0) - m.delta)
-  }
-
-  // Every sale bills its full total, whether it was paid in cash or on credit.
-  // A void adds a returns debit and reverses the asset side: cash for a cash
-  // sale (the void movement above), the receivable for a credit sale.
-  for (const sale of sales) {
-    const received = collected.get(sale.id) ?? 0
-    add(ACCOUNTS.SALES, -sale.total)
-    if (sale.paymentMethod === 'credit') add(ACCOUNTS.RECEIVABLES, sale.total)
-    if (sale.status === 'voided') {
-      add(ACCOUNTS.RETURNS, sale.total)
-      if (sale.paymentMethod === 'credit') {
-        add(ACCOUNTS.RECEIVABLES, -(sale.total - received))
-      }
-    }
-    // A voided sale has no receivable and no bad debt. This can only happen if
-    // two offline tills write off and void the same sale before they sync; the
-    // void wins for the books so the write-off cannot double-count the loss.
-    const written = effectiveWriteOffAmount(sale, received)
-    if (written > 0) {
-      add(ACCOUNTS.BAD_DEBTS, written)
-      add(ACCOUNTS.RECEIVABLES, -written)
-    }
-
-    // Turn a negative receivable into a customer-credit liability. A completed
-    // sale can be overpaid by two tills collecting the same balance offline. A
-    // voided sale can receive a payment after its refund was already recorded.
-    // The cash is real, but the shop is holding it for the customer.
-    if (sale.paymentMethod === 'credit') {
-      if (sale.status === 'completed') {
-        const overpaid = Math.max(0, received - sale.total)
-        if (overpaid > 0) {
-          add(ACCOUNTS.RECEIVABLES, overpaid)
-          add(ACCOUNTS.CUSTOMER_CREDITS, -overpaid)
-        }
-      } else if (sale.status === 'voided') {
-        const held = received - (refunded.get(sale.id) ?? 0)
-        if (held !== 0) add(ACCOUNTS.CUSTOMER_CREDITS, -held)
-      }
-    }
-  }
-
-  // A credit payment with no credit sale behind it is still cash the shop is
-  // holding for someone. Reclassify the negative receivable the cash loop left.
-  let unattached = 0
-  for (const [saleId, received] of collected) {
-    const sale = saleById.get(saleId)
-    if (!sale || sale.paymentMethod !== 'credit') unattached += received
-  }
-  if (unattached !== 0) {
-    add(ACCOUNTS.RECEIVABLES, unattached)
-    add(ACCOUNTS.CUSTOMER_CREDITS, -unattached)
-  }
-
-  // Completed sales consume inventory; each line depletes stock at cost.
-  const completed = new Set(sales.filter((s) => s.status === 'completed').map((s) => s.id))
-  for (const l of lines) {
-    if (!completed.has(l.saleId)) continue
-    const cost = costOf(byId, l.productId, l.unitPrice)
-    add(ACCOUNTS.COGS, l.qty * cost)
-    add(ACCOUNTS.INVENTORY, -(l.qty * cost))
-  }
-
-  // Every stock movement moves inventory value: purchases at cost with a
-  // variance leg (paid vs booked), opening stock as a contribution, stock
-  // takes as adjustments.
-  const purchasePaid = new Map<string, Cents>()
-  for (const m of cash) {
-    if (m.reason === 'purchase') purchasePaid.set(m.id, Math.abs(m.delta))
-  }
-  const purchaseValue = new Map<string, Cents>()
-  for (const sm of stockMoves) {
-    if (sm.reason !== 'purchase' || !sm.refId) continue
-    const cost = costOf(byId, sm.productId, 0)
-    purchaseValue.set(sm.refId, (purchaseValue.get(sm.refId) ?? 0) + sm.delta * cost)
-  }
-  for (const [refId, paid] of purchasePaid) {
-    const booked = purchaseValue.get(refId) ?? 0
-    add(ACCOUNTS.INVENTORY, booked)
-    // Positive when you paid more than you booked (a loss), negative when you
-    // paid less (a bargain).
-    add(ACCOUNTS.PURCHASE_VARIANCE, paid - booked)
-  }
-
-  for (const sm of stockMoves) {
-    if (sm.reason === 'purchase') continue
-    const cost = costOf(byId, sm.productId, 0)
-    const w = sm.delta * cost
-    if (sm.reason === 'import' || sm.reason === 'opening') {
-      add(ACCOUNTS.INVENTORY, w)
-      add(ACCOUNTS.CONTRIBUTED, -w)
-    } else if (sm.reason === 'adjust') {
-      add(ACCOUNTS.INVENTORY, w)
-      add(ACCOUNTS.STOCK_ADJUST, -w)
-    }
-    // 'sale' and 'void' stock movements are the mirror of the cash columns;
-    // inventory value is tracked through the completed-lines depletions above
-    // and the products table, so they need no extra legs.
-  }
+  const journal = buildJournal({ sales, lines, cash, products, stockMoves, tabEntries })
+  const balances = journalBalances(journal.entries)
 
   const rows: TrialBalanceRow[] = []
-  for (const [account, balance] of b) {
+  for (const [account, balance] of balances) {
     if (balance === 0) continue
-
     rows.push({ account, name: ACCOUNT_NAMES[account] ?? `Account ${account}`, balance })
   }
   rows.sort((a, z) => a.account - z.account)
@@ -422,80 +216,67 @@ export function incomeStatement(
   dates?: string[],
   stockMoves?: StockMovement[],
 ): IncomeStatement {
-  const inWindow = dates?.length ? (d: string) => dates.includes(d) : () => true
-  const byId = new Map(products.map((p) => [p.id, p]))
-  const collected = creditPaidMap(cash)
+  const windowed = dates?.length
+    ? sales.filter((sale) => dates.includes(sale.businessDate))
+    : sales
+  const completed = windowed.filter((sale) => sale.status === 'completed')
+  const saleIds = new Set(completed.map((sale) => sale.id))
+  const used = lines.filter((line) => saleIds.has(line.saleId))
 
-  const windowed = sales.filter((s) => inWindow(s.businessDate))
-  const completed = windowed.filter((s) => s.status === 'completed')
-  const saleIds = new Set(completed.map((s) => s.id))
-  const used = lines.filter((l) => saleIds.has(l.saleId))
+  // The P&L is a view of the same journal the trial balance uses, filtered by
+  // business date. Nothing here re-derives revenue or cost from the rows.
+  const journal = buildJournal({
+    sales,
+    lines,
+    cash,
+    products,
+    stockMoves: stockMoves ?? [],
+  })
+  const windowedEntries = dates?.length
+    ? journal.entries.filter((journalEntry) => dates.includes(journalEntry.date))
+    : journal.entries
 
-  // Gross revenue bills every sale, including the ones later refunded; the
-  // refunds line (from voided sale rows below) reverses them. That mirrors the
-  // postings — a sale and its void cancel on the trial balance — so a sale
-  // refunded in full nets to zero profit instead of a phantom loss. Deriving
-  // returns from the sale rows rather than cash means a voided credit sale
-  // reverses its full revenue even when only part of it was ever paid.
-  // Cost of goods sold and the item count only look at completed sales, whose
-  // stock actually left the shelf and came back with the void.
-  const revenue = windowed.reduce((s, x) => s + x.total, 0)
-  const cogs = used.reduce(
-    (s, l) => s + l.qty * costOf(byId, l.productId, l.unitPrice),
-    0,
-  )
-  const returns = windowed
-    .filter((s) => s.status === 'voided')
-    .reduce((s, x) => s + x.total, 0)
-  const expenses = -(
-    cash
-      .filter((m) => m.reason === 'expense' && inWindow(m.businessDate))
-      .reduce((s, m) => s + m.delta, 0) || 0
-  )
-  // A write-off is an expense on the day it is posted, not the day of the sale.
-  // Later payments, including one synced from another till, reduce the loss.
-  const badDebts = sales
-    .filter((s) => {
-      const day = writeOffDate(s)
-      return (
-        effectiveWriteOffAmount(s, collected.get(s.id) ?? 0) > 0 &&
-        day !== null &&
-        inWindow(day)
-      )
-    })
-    .reduce(
-      (s, x) => s + effectiveWriteOffAmount(x, collected.get(x.id) ?? 0),
+  const accountTotal = (account: number, entries = windowedEntries): Cents =>
+    entries.reduce(
+      (total, journalEntry) =>
+        total +
+        journalEntry.postings.reduce(
+          (entryTotal, posting) =>
+            posting.account === account ? entryTotal + posting.amount : entryTotal,
+          0,
+        ),
       0,
     )
 
-  // Purchase variance: what each purchase payment booked minus what was paid.
-  // Stock adjustments: signed shelf losses from stock takes.
-  let purchaseVariance: Cents = 0
-  let stockAdjust: Cents = 0
-  if (stockMoves) {
-    const range = windowMillis(dates)
-    const paid = new Map<string, Cents>()
-    const booked = new Map<string, Cents>()
-    for (const m of cash) {
-      if (m.reason === 'purchase' && inWindow(m.businessDate)) {
-        paid.set(m.id, Math.abs(m.delta))
-      }
-    }
-    for (const sm of stockMoves) {
-      if (sm.reason !== 'purchase' || !sm.refId) continue
-      booked.set(sm.refId, (booked.get(sm.refId) ?? 0) + sm.delta * costOf(byId, sm.productId, 0))
-    }
-    for (const [refId, p] of paid) {
-      purchaseVariance += (booked.get(refId) ?? 0) - p
-    }
-    stockAdjust = stockMoves
-      .filter((sm) => sm.reason === 'adjust' && inRange(sm.createdAt, range))
-      .reduce((s, sm) => s - sm.delta * costOf(byId, sm.productId, 0), 0)
-  }
+  const revenue = normalize(-accountTotal(ACCOUNTS.SALES))
+  const returns = normalize(accountTotal(ACCOUNTS.RETURNS))
+  const cogs = normalize(accountTotal(ACCOUNTS.COGS))
+  const expenses = normalize(accountTotal(ACCOUNTS.EXPENSES))
+  const badDebts = normalize(accountTotal(ACCOUNTS.BAD_DEBTS))
+  // The journal stores paid-minus-booked; the P&L reports the gain the other
+  // way round, so a bargain is positive. Without stock movements there is no
+  // booking to compare a payment against, so the variance stays zero.
+  const purchaseVariance = stockMoves
+    ? normalize(-accountTotal(ACCOUNTS.PURCHASE_VARIANCE))
+    : 0
+  // Stock takes are filtered by their source timestamp, matching the day the
+  // adjustment was recorded even if its business date is edited.
+  const stockAdjust = normalize(
+    accountTotal(
+      ACCOUNTS.STOCK_ADJUST,
+      journal.entries.filter(
+        (journalEntry) =>
+          journalEntry.kind === 'stock' &&
+          journalEntry.meta?.reason === 'adjust' &&
+          inRange(journalEntry.createdAt, windowMillis(dates)),
+      ),
+    ),
+  )
 
-  const netRevenue = revenue - returns
-  const netProfit =
-    netRevenue - cogs - expenses - badDebts + purchaseVariance - stockAdjust
+  const netRevenue = normalize(revenue - returns)
+  const netProfit = normalize(
+    netRevenue - cogs - expenses - badDebts + purchaseVariance - stockAdjust,
+  )
 
   return {
     revenue,
@@ -509,7 +290,7 @@ export function incomeStatement(
     badDebts,
     netProfit,
     saleCount: completed.length,
-    itemsSold: used.reduce((s, l) => s + l.qty, 0),
+    itemsSold: used.reduce((s, line) => s + line.qty, 0),
   }
 }
 
@@ -551,54 +332,60 @@ export function balanceSheet(
   lines: SaleLine[],
   tabBalance: Cents = 0,
 ): BalanceSheet {
-  const byId = new Map(products.map((p) => [p.id, p]))
+  // Read every balance from the same journal as the trial balance and P&L.
+  // Stock value still comes from the shelf count because a cost edit made
+  // straight on a product is exactly the unposted movement the `check` line is
+  // there to expose.
+  const journal = buildJournal({ sales, lines, cash, products, stockMoves })
+  const balances = journalBalances(journal.entries)
+  const balance = (account: number): Cents => balances.get(account) ?? 0
 
-  const cashTotal = cash.reduce((s, m) => s + m.delta, 0)
-  const stockValue = products.reduce((s, p) => s + p.stockQty * (p.cost ?? p.price), 0)
-  const receivables = outstandingReceivables(sales, cash)
-  const credits = customerCreditTotals(sales, cash)
+  const cashTotal = normalize(balance(ACCOUNTS.CASH))
+  const stockValue = normalize(
+    products.reduce((s, p) => s + p.stockQty * (p.cost ?? p.price), 0),
+  )
+  const receivables = normalize(balance(ACCOUNTS.RECEIVABLES))
+  const loans = normalize(-balance(ACCOUNTS.LOANS))
+  const capitalIn = normalize(-balance(ACCOUNTS.CAPITAL))
+  const contributedStock = normalize(-balance(ACCOUNTS.CONTRIBUTED))
+  const drawings = normalize(-balance(ACCOUNTS.DRAWINGS))
+  const retainedProfit = normalize(
+    -(
+      balance(ACCOUNTS.SALES) +
+      balance(ACCOUNTS.RETURNS) +
+      balance(ACCOUNTS.COGS) +
+      balance(ACCOUNTS.EXPENSES) +
+      balance(ACCOUNTS.BAD_DEBTS) +
+      balance(ACCOUNTS.PURCHASE_VARIANCE) +
+      balance(ACCOUNTS.STOCK_ADJUST)
+    ),
+  )
 
-  const loans = cash
-    .filter((m) => (m.reason === 'cash_in' && m.kind === 'loan') || m.reason === 'loan_repay')
-    .reduce((s, m) => s + m.delta, 0)
-
-  const capitalIn = cash
-    .filter(
-      (m) =>
-        (m.reason === 'float' ||
-          (m.reason === 'cash_in' && m.kind !== 'loan')) ,
-    )
-    .reduce((s, m) => s + m.delta, 0)
-
-  const contributedStock = stockMoves
-    .filter((m) => m.reason === 'opening' || m.reason === 'import')
-    .reduce((s, m) => s + m.delta * costOf(byId, m.productId, 0), 0)
-
-  const allTime = incomeStatement(sales, lines, products, cash, undefined, stockMoves)
-  const drawings = cash
-    .filter((m) => m.reason === 'drawing')
-    .reduce((s, m) => s + m.delta, 0)
-
-  const totalEquity = capitalIn + contributedStock + allTime.netProfit + drawings
-  const customerCredits = credits.total + tabBalance
+  const totalEquity = normalize(
+    capitalIn + contributedStock + retainedProfit + drawings,
+  )
+  const customerCredits = normalize(
+    -balance(ACCOUNTS.CUSTOMER_CREDITS) + tabBalance,
+  )
 
   return {
     cash: cashTotal,
     stockValue,
     receivables,
-    totalAssets: cashTotal + stockValue + receivables,
+    totalAssets: normalize(cashTotal + stockValue + receivables),
     loans,
     customerCredits,
     capitalIn,
     contributedStock,
-    retainedProfit: allTime.netProfit,
+    retainedProfit,
     drawings,
     totalEquity,
-    check:
+    check: normalize(
       cashTotal +
-      stockValue +
-      receivables -
-      (loans + customerCredits + totalEquity),
+        stockValue +
+        receivables -
+        (loans + customerCredits + totalEquity),
+    ),
   }
 }
 

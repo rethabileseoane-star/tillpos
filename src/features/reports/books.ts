@@ -496,7 +496,7 @@ export function trialBalanceTable(data: BooksData): BookTable {
   const notes = [
     tb.difference === 0
       ? 'Debits equal credits — the books balance to the tambala.'
-      : `Difference (M): ${fmt2(tb.difference)} — usually a cost revaluation made straight on a product.`,
+      : `Difference (M): ${fmt2(tb.difference)} — an event is missing its other side (check the sync).`,
   ]
   return {
     title: 'Trial balance',
