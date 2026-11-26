@@ -17,6 +17,7 @@ Other scripts:
 ```bash
 npm test           # unit, licence, database integration and sync checks
 npm run test:license # licence token and key-format checks only
+npm run test:py    # Python accounting rules and statements (Python 3.10+)
 npm run build      # typecheck + production build into dist/
 npm run preview    # serve the built app on your LAN, for phone testing
 npm run icons      # regenerate the PWA icon PNGs
@@ -269,6 +270,26 @@ sale's receivable.
 cache, rebuilt from the ledger on boot and available on demand from Settings.
 That is why selling more than you have is allowed: stock goes negative and you
 reconcile, rather than the app blocking a paying customer.
+
+## Accountant's Python tool
+
+For an accountant or a separate check, `python/` contains a standalone Python
+3.10+ package that reads a JSON backup and prints the trial balance, P&L,
+balance sheet and cash flow. It uses the same account codes and posting rules as
+the app, but no Beancount code, no GPL source and no browser runtime.
+
+Export **Settings -> Security -> Backup (JSON)** from the history-holding till,
+then from the repository root:
+
+```bash
+python python/run_accounting.py path/to/till-backup.json
+python python/run_accounting.py path/to/till-backup.json --dates 2026-11-01 2026-11-30
+python python/run_accounting.py path/to/till-backup.json --json
+```
+
+The tool exits non-zero when a source rule or journal entry fails. See
+[python/README.md](python/README.md) for the rules, account table, validation and
+current limits.
 
 ## Offline and sync
 

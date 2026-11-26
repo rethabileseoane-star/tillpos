@@ -3,6 +3,12 @@ dist
 .agents
 dev-dist
 certs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+python/.venv/
 tools/.smoke.mjs
 tools/.license.mjs
 tools/.itest.cjs

@@ -1,0 +1,166 @@
+{
+  "app": "till-pos",
+  "version": 1,
+  "exportedAt": "2026-10-13T08:00:00.000Z",
+  "tables": {
+    "products": [
+      {
+        "id": "p-sugar",
+        "barcode": "S001",
+        "name": "Sugar 1kg",
+        "price": 1500,
+        "cost": 1400,
+        "stockQty": 9,
+        "lowStockThreshold": 2,
+        "category": "Grocery",
+        "active": true,
+        "createdAt": 1791763200000,
+        "updatedAt": 1791763200000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "sales": [
+      {
+        "id": "s-1",
+        "receiptNo": "0001",
+        "businessDate": "2026-10-12",
+        "subtotal": 1500,
+        "total": 1500,
+        "paymentMethod": "cash",
+        "amountTendered": 1500,
+        "change": 0,
+        "status": "completed",
+        "voidedAt": null,
+        "note": "",
+        "cashierName": "Owner",
+        "customerName": null,
+        "createdAt": 1791849600000,
+        "updatedAt": 1791849600000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "saleLines": [
+      {
+        "id": "l-1",
+        "saleId": "s-1",
+        "productId": "p-sugar",
+        "barcode": "S001",
+        "name": "Sugar 1kg",
+        "unitPrice": 1500,
+        "qty": 1,
+        "lineTotal": 1500,
+        "adHoc": false,
+        "createdAt": 1791849600000,
+        "updatedAt": 1791849600000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "stockMovements": [
+      {
+        "id": "sm-open",
+        "productId": "p-sugar",
+        "delta": 10,
+        "reason": "opening",
+        "refId": null,
+        "note": "Opening stock",
+        "createdAt": 1791763200000,
+        "updatedAt": 1791763200000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      },
+      {
+        "id": "sm-sale",
+        "productId": "p-sugar",
+        "delta": -1,
+        "reason": "sale",
+        "refId": "s-1",
+        "note": "Sale 0001",
+        "createdAt": 1791849600000,
+        "updatedAt": 1791849600000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "cashMovements": [
+      {
+        "id": "cm-float",
+        "reason": "float",
+        "delta": 10000,
+        "refId": null,
+        "businessDate": "2026-10-12",
+        "note": "Opening float",
+        "createdAt": 1791763200000,
+        "updatedAt": 1791763200000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      },
+      {
+        "id": "cm-sale",
+        "reason": "sale",
+        "delta": 1500,
+        "refId": "s-1",
+        "businessDate": "2026-10-12",
+        "note": "Sale 0001",
+        "createdAt": 1791849600000,
+        "updatedAt": 1791849600000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      },
+      {
+        "id": "cm-tab",
+        "reason": "tab_credit",
+        "delta": 2000,
+        "refId": "te-1",
+        "businessDate": "2026-10-12",
+        "note": "Tab deposit",
+        "createdAt": 1791853200000,
+        "updatedAt": 1791853200000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "customerTabs": [
+      {
+        "id": "t-1",
+        "name": "Customer A",
+        "phone": null,
+        "note": null,
+        "createdAt": 1791763200000,
+        "updatedAt": 1791763200000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "tabEntries": [
+      {
+        "id": "te-1",
+        "tabId": "t-1",
+        "kind": "credit",
+        "amount": 2000,
+        "saleId": null,
+        "cashMovementId": "cm-tab",
+        "businessDate": "2026-10-12",
+        "note": "Tab deposit",
+        "createdAt": 1791853200000,
+        "updatedAt": 1791853200000,
+        "deletedAt": null,
+        "rev": 1,
+        "deviceId": "sample-device"
+      }
+    ],
+    "settings": [],
+    "outbox": []
+  }
+}
