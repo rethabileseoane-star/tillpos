@@ -1,8 +1,6 @@
 import { useState } from 'react'
-import { localDate } from '@/domain/time'
-import { downloadBlob, exportProductsCsv } from '@/features/catalog/csvImport'
-import { feedbackError, feedbackSuccess } from '@/ui/feedback'
-import { downloadBackupJson, eraseLocalData } from './backup'
+import { feedbackError } from '@/ui/feedback'
+import { eraseLocalData } from './backup'
 import type { SecretKind } from './secret'
 
 export function RecoverySheet({
@@ -12,41 +10,24 @@ export function RecoverySheet({
   kind: SecretKind
   onClose: () => void
 }) {
-  const [busy, setBusy] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState('')
-  const [note, setNote] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const runExport = async (label: string, task: () => Promise<void>) => {
-    setBusy(label)
-    setError(null)
-    setNote(null)
-    try {
-      await task()
-      feedbackSuccess()
-      setNote('Saved. Keep the file somewhere safe — this device is about to forget it.')
-    } catch (err) {
-      feedbackError()
-      setError(err instanceof Error ? err.message : 'Could not create the file.')
-    } finally {
-      setBusy(null)
-    }
-  }
-
   const wipe = async () => {
-    setBusy('Erasing')
+    setBusy(true)
     setError(null)
     try {
       await eraseLocalData()
       location.reload()
     } catch (err) {
-      setBusy(null)
+      setBusy(false)
       feedbackError()
       setError(err instanceof Error ? err.message : 'Could not erase the data.')
     }
   }
 
-  const canErase = confirm.trim().toUpperCase() === 'ERASE' && busy === null
+  const canErase = confirm.trim().toUpperCase() === 'ERASE' && !busy
 
   return (
     <div
@@ -64,8 +45,8 @@ export function RecoverySheet({
               Forgot {kind === 'pin' ? 'PIN' : 'password'}?
             </h2>
             <p className="mt-0.5 text-xs leading-relaxed text-surface-600">
-              The lock cannot be bypassed. Your records are stored on this device
-              only, so they have to be erased with it.
+              The lock cannot be bypassed. If cloud sync was not set up, the
+              records on this device cannot be recovered after a reset.
             </p>
           </div>
           <button
@@ -80,41 +61,12 @@ export function RecoverySheet({
         </div>
 
         <div className="mt-4 rounded-xl border border-cyan-400/30 bg-cyan-400/10 p-3 text-[11px] leading-relaxed text-cyan-600">
-          <strong className="font-semibold">Save a copy first.</strong> Both files
-          download to this device's Downloads folder. They cover the shop you are
-          unlocking. The JSON archive contains every sale, product and movement;
-          the catalog CSV can be re-imported with the existing importer.
+          <strong className="font-semibold">No exports from the lock screen.</strong>{' '}
+          For the owner's security, backups are only available from Settings while
+          the till is unlocked. If cloud sync was set up, sign in again after the
+          reset to pull the records back.
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            className="btn-ghost !py-2.5 text-sm"
-            disabled={busy !== null}
-            onClick={() => void runExport('backup', downloadBackupJson)}
-          >
-            {busy === 'backup' ? 'Saving…' : 'Backup (JSON)'}
-          </button>
-          <button
-            className="btn-ghost !py-2.5 text-sm"
-            disabled={busy !== null}
-            onClick={() =>
-              void runExport('catalog', async () => {
-                downloadBlob(
-                  await exportProductsCsv(),
-                  `catalog-${localDate()}.csv`,
-                )
-              })
-            }
-          >
-            {busy === 'catalog' ? 'Saving…' : 'Catalog (CSV)'}
-          </button>
-        </div>
-
-        {note && (
-          <p className="mt-2 rounded-xl bg-cyan-400/10 px-3 py-2 text-[11px] leading-relaxed text-cyan-600">
-            {note}
-          </p>
-        )}
         {error && (
           <p className="mt-2 rounded-xl bg-surface-300 px-3 py-2 text-[11px] leading-relaxed text-surface-700">
             {error}
@@ -146,11 +98,10 @@ export function RecoverySheet({
             disabled={!canErase}
             onClick={() => void wipe()}
           >
-            {busy === 'Erasing' ? 'Erasing…' : 'Erase everything and reset'}
+            {busy ? 'Erasing…' : 'Erase everything and reset'}
           </button>
           <p className="mt-2 text-center text-[10px] leading-relaxed text-surface-500">
-            If the download will not work, clearing this site's data in the
-            browser settings also resets the lock.
+            Clearing this site's data in the browser settings also resets the lock.
           </p>
         </div>
       </div>

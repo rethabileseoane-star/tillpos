@@ -117,9 +117,14 @@ create trigger licenses_touch
 -- SECURITY DEFINER is used so the RLS policy on licenses does not have to
 -- recursively read license_admins through RLS. The function has no caller-
 -- supplied SQL, is stable, and is executable only by authenticated users. It
--- returns false for every non-admin.
+-- returns false for every non-admin. It lives outside the exposed `public`
+-- schema so it cannot be called directly through /rest/v1/rpc.
 
-create or replace function public.is_license_admin()
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+grant usage on schema private to authenticated, service_role;
+
+create or replace function private.is_license_admin()
 returns boolean
 language sql
 stable
@@ -133,9 +138,8 @@ as $$
   );
 $$;
 
-revoke all on function public.is_license_admin() from public;
-revoke all on function public.is_license_admin() from anon;
-grant execute on function public.is_license_admin() to authenticated;
+revoke all on function private.is_license_admin() from public, anon;
+grant execute on function private.is_license_admin() to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- RLS
@@ -158,23 +162,23 @@ create policy "licence admins manage licences"
   on public.licenses
   for all
   to authenticated
-  using (public.is_license_admin())
-  with check (public.is_license_admin());
+  using ((select private.is_license_admin()))
+  with check ((select private.is_license_admin()));
 
 drop policy if exists "licence admins manage devices" on public.license_devices;
 create policy "licence admins manage devices"
   on public.license_devices
   for all
   to authenticated
-  using (public.is_license_admin())
-  with check (public.is_license_admin());
+  using ((select private.is_license_admin()))
+  with check ((select private.is_license_admin()));
 
 drop policy if exists "licence admins read events" on public.license_events;
 create policy "licence admins read events"
   on public.license_events
   for select
   to authenticated
-  using (public.is_license_admin());
+  using ((select private.is_license_admin()));
 
 -- ---------------------------------------------------------------------------
 -- Grants: no anon access. The Edge Function uses the service-role key, which

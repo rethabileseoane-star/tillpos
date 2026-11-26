@@ -1,6 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { localDate } from '@/domain/time'
+import { downloadBlob, exportProductsCsv } from '@/features/catalog/csvImport'
 import { feedbackError, feedbackSuccess } from '@/ui/feedback'
 import { Portal } from '@/ui/Portal'
+import { downloadBackupJson } from './backup'
 import {
   biometricSupportNote,
   biometricsSupported,
@@ -39,6 +42,7 @@ export function SecurityCard() {
   const [sheet, setSheet] = useState<SheetState>(null)
   const [message, setMessage] = useState<CardMessage | null>(null)
   const [busy, setBusy] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
   const [authenticator, setAuthenticator] = useState(false)
 
   const owner = accounts.find((a) => a.role === 'owner')
@@ -88,6 +92,24 @@ export function SecurityCard() {
       })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const saveExport = async (label: string, task: () => Promise<void>) => {
+    setExportBusy(true)
+    setMessage(null)
+    try {
+      await task()
+      feedbackSuccess()
+      setMessage({ text: `${label} saved to this device.` })
+    } catch (err) {
+      feedbackError()
+      setMessage({
+        text: err instanceof Error ? err.message : `Could not save the ${label.toLowerCase()}.`,
+        error: true,
+      })
+    } finally {
+      setExportBusy(false)
     }
   }
 
@@ -273,6 +295,37 @@ export function SecurityCard() {
                   "No fingerprint or face is enrolled in this device's settings yet."}
               </p>
             )}
+          </div>
+
+          <div className="mt-3 rounded-xl border border-surface-300 p-3">
+            <h3 className="text-sm font-semibold text-surface-900">Backup</h3>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-surface-600">
+              Save a copy of this shop's records to this device. Lock secrets and
+              sync keys are never included.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                className="btn-ghost !py-2.5 text-sm"
+                disabled={busy || exportBusy}
+                onClick={() => void saveExport('Backup', downloadBackupJson)}
+              >
+                {exportBusy ? 'Saving…' : 'Backup (JSON)'}
+              </button>
+              <button
+                className="btn-ghost !py-2.5 text-sm"
+                disabled={busy || exportBusy}
+                onClick={() =>
+                  void saveExport('Catalog', async () => {
+                    downloadBlob(
+                      await exportProductsCsv(),
+                      `catalog-${localDate()}.csv`,
+                    )
+                  })
+                }
+              >
+                {exportBusy ? 'Saving…' : 'Catalog (CSV)'}
+              </button>
+            </div>
           </div>
 
           {cashiers.length === 0 ? (
